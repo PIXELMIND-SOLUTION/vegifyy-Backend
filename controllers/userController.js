@@ -1,5 +1,17 @@
 const Auth = require('../models/userModel');
 const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
+
+// Temporary in-memory OTP storage
+const tempUsers = {};
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'yourgmail@gmail.com',
+    pass: 'yourapppassword'
+  }
+});
 
 // Register user with OTP
 const generateReferralCode = () => {
@@ -11,6 +23,7 @@ const generateReferralCode = () => {
   return code;
 };
 
+// Request OTP (no DB save yet)
 const register = async (req, res) => {
   const { firstName, lastName, email, phoneNumber, referralCodeUsed } = req.body;
 
@@ -23,15 +36,41 @@ const register = async (req, res) => {
     if (existing) return res.status(400).json({ message: 'User already exists' });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const referralCode = generateReferralCode();
+    tempUsers[email] = {
+      otp,
+      userData: { firstName, lastName, email, phoneNumber, referralCodeUsed }
+    };
 
+    await transporter.sendMail({
+      from: 'yourgmail@gmail.com',
+      to: email,
+      subject: 'OTP Verification',
+      text: `Your OTP is ${otp}`
+    });
+
+    res.status(200).json({ message: 'OTP sent to email' });
+  } catch (err) {
+    res.status(500).json({ message: 'OTP request failed', error: err.message });
+  }
+};
+
+
+// Verify OTP and register user
+const verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+  const temp = tempUsers[email];
+
+  if (!temp) return res.status(400).json({ message: 'No OTP request found for this email' });
+  if (temp.otp !== otp) return res.status(400).json({ message: 'Invalid OTP' });
+
+  try {
+    const { firstName, lastName, phoneNumber, referralCodeUsed } = temp.userData;
+    const referralCode = generateReferralCode();
     let referredBy = null;
     let coins = 0;
 
-    // If referral code is used, reward both
     if (referralCodeUsed) {
       const referrer = await Auth.findOne({ referralCode: referralCodeUsed });
-
       if (referrer) {
         referrer.coins += 100;
         await referrer.save();
@@ -45,38 +84,18 @@ const register = async (req, res) => {
       lastName,
       email,
       phoneNumber,
-      otp,
+      isVerified: true,
       referralCode,
       referredBy,
       coins
     });
 
-    res.status(201).json({
-      message: 'User registered. OTP sent.',
-      userId: newUser._id,
-      otp,
-      referralCode
-    });
+    delete tempUsers[email];
 
+    res.status(201).json({ message: 'User registered successfully', userId: newUser._id, referralCode });
   } catch (err) {
     res.status(500).json({ message: 'Registration failed', error: err.message });
   }
-};
-
-// Verify OTP
-const verifyOtp = async (req, res) => {
-  const { email, otp } = req.body;
-  const user = await Auth.findOne({ email });
-
-  if (!user || user.otp !== otp) {
-    return res.status(400).json({ message: 'Invalid OTP' });
-  }
-
-  user.isVerified = true;
-  user.otp = null;
-  await user.save();
-
-  res.status(200).json({ message: 'OTP verified. You can now set a password.', userId: user._id });
 };
 
 // Set Password after OTP
