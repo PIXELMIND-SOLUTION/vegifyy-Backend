@@ -1,76 +1,110 @@
 const User = require('../models/userModel');
 const bcrypt = require('bcrypt');
-const otpGenerator = require('otp-generator');
+const { generateReferralCode } = require('../utils/referral'); // if separated
+const { generateTempToken, verifyTempToken } = require('../utils/jws');
 
-// Generate 6-character referral code
-function generateReferralCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
 
-// ✅ Registration Controller
+// ✅ TEMP GLOBAL TOKEN (holds latest registration)
+let latestToken = null;
+
+
+// ✅ REGISTER CONTROLLER
 const register = async (req, res) => {
   try {
     const { firstName, lastName, email, phoneNumber, referralCode } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Email or Mobile already exists' });
+    // 🔒 Check required
+    if (!firstName || !lastName || !email || !phoneNumber || !referralCode) {
+      return res.status(400).json({ message: 'All fields including referralCode are required ❌' });
     }
 
-    const generatedReferralCode = generateReferralCode();
-    const otp = '1234'; // ✅ Always fixed OTP
+    // ❌ Check existing
+    const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email or phone already exists ❌' });
+    }
 
-    // Save user
-    const newUser = new User({
+    // ✅ Generate
+    const generatedReferralCode = generateReferralCode();
+    const otp = '1234';
+
+    // 🎯 Token payload
+    const payload = {
       firstName,
       lastName,
       email,
       phoneNumber,
       referralCode: generatedReferralCode,
-      referredBy: referralCode || null,
-      otp: otp  // ✅ Save 1234 to DB
+      referredBy: referralCode,
+      otp,
+      createdAt: new Date().toISOString()
+    };
+
+    // 🔐 Generate token for 1 min
+    latestToken = generateTempToken(payload);
+
+    res.status(200).json({
+      message: 'OTP sent successfully 🔐',
+      otp,
+      token: latestToken,
+      referralCode: generatedReferralCode
+    });
+
+  } catch (err) {
+    console.error('Register Error:', err);
+    res.status(500).json({ error: 'Something went wrong during registration ❌' });
+  }
+};
+
+// ✅ VERIFY OTP CONTROLLER
+const verifyOtp = async (req, res) => {
+  try {
+    const { otp } = req.body;
+
+    if (!otp) {
+      return res.status(400).json({ message: 'OTP is required ❌' });
+    }
+
+    if (!latestToken) {
+      return res.status(401).json({ message: 'OTP expired or not found. Please register again ❌' });
+    }
+
+    const decoded = verifyTempToken(latestToken);
+
+    if (otp !== decoded.otp) {
+      return res.status(400).json({ message: 'Invalid OTP ❌' });
+    }
+
+    // ✅ Save to DB
+    const newUser = new User({
+      firstName: decoded.firstName,
+      lastName: decoded.lastName,
+      email: decoded.email,
+      phoneNumber: decoded.phoneNumber,
+      referralCode: decoded.referralCode,
+      referredBy: decoded.referredBy,
+      otp: decoded.otp
     });
 
     await newUser.save();
 
+    // ✅ Invalidate token after use
+    latestToken = null;
+
     res.status(201).json({
-      message: 'User registered successfully. Please verify OTP.',
-      otp: otp,  // ✅ Will always send 1234
-      yourReferralCode: generatedReferralCode
+      message: '✅ OTP verified successfully. User registered!'
     });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('OTP Verification Error:', err);
+
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: '⏰ OTP expired. Please register again.' });
+    }
+
+    res.status(500).json({ error: 'Something went wrong during OTP verification ❌' });
   }
 };
-
-// ✅ OTP Verification Controller
-const verifyOtp = async (req, res) => {
-  const { otp } = req.body;
-
-  if (otp !== '1234') {
-    return res.status(400).json({ message: 'Invalid OTP' });
-  }
-
-  // Find the latest user waiting for OTP verification
-  const user = await User.findOne({ otp: '1234', isVerified: false }).sort({ createdAt: -1 });
-
-  if (!user) {
-    return res.status(404).json({ message: 'User not found or already verified' });
-  }
-
-  user.isVerified = true;
-  await user.save();
-
-  return res.status(200).json({ message: 'OTP verified successfully' });
-};
-
-
 const setPassword = async (req, res) => {
   const { password } = req.body;
 
