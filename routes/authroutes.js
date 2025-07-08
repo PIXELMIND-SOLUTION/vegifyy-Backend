@@ -8,10 +8,13 @@ const {
   login,
   getProfile,
   updateProfile,
+  deleteProfile,
   addAddress,
   getAddress,
-  updateAddress, 
-  getReferralByUserId
+  updateAddress,
+  deleteAddress, 
+  getReferralByUserId,
+  
 } = require('../controllers/userController');
 
 // 🔐 Authentication Flow
@@ -23,6 +26,7 @@ router.post('/login', login);                    // Step 4: Login with phoneNumb
 // 👤 User Profile
 router.get('/profile/:userId', getProfile);              // Get user profile
 router.put('/profile/:userId', updateProfile);           // Update user profile
+router.delete('/profile/:userId', deleteProfile);
 
 // ➕ Add address
 router.post('/address/:userId', addAddress);
@@ -31,7 +35,9 @@ router.post('/address/:userId', addAddress);
 router.put('/address/:userId', updateAddress);
 
 // 🔍 Get address
-router.get('/address/:userId', getAddress);     // Get address
+router.get('/address/:userId', getAddress);  
+router.delete('/address/:userId', deleteAddress);
+
 
 // 🎁 Referral Info
 router.get('/referral/:userId', getReferralByUserId);    // Get referralCode & coins

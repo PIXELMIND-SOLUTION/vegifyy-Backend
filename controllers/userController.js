@@ -153,6 +153,18 @@ const updateProfile = async (req, res) => {
   }
 };
 
+const deleteProfile = async (req, res) => {
+  try {
+    const deletedUser = await User.findByIdAndDelete(req.params.userId);
+    if (!deletedUser) return res.status(404).json({ message: 'User not found ❌' });
+
+    res.status(200).json({ message: 'Profile deleted successfully ✅' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to delete profile ❌', error: err.message });
+  }
+};
+
+
 const addAddress = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -213,6 +225,21 @@ const updateAddress = async (req, res) => {
   }
 };
 
+const deleteAddress = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+
+    user.address = {}; // clear the address object
+    await user.save();
+
+    res.status(200).json({ message: 'Address deleted successfully ✅' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to delete address ❌', error: err.message });
+  }
+};
+
+
 
 const getReferralByUserId = async (req, res) => {
   try {
@@ -231,8 +258,10 @@ module.exports = {
   login,
   getProfile,
   updateProfile,
+  deleteProfile,
   addAddress,
   getAddress,
   updateAddress,
+  deleteAddress,
   getReferralByUserId
 };
