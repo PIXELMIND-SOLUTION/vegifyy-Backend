@@ -8,8 +8,9 @@ const {
   login,
   getProfile,
   updateProfile,
-  addOrUpdateAddress,
-  getAddressByUserId,
+  addAddress,
+  getAddress,
+  updateAddress, 
   getReferralByUserId
 } = require('../controllers/userController');
 
@@ -23,9 +24,14 @@ router.post('/login', login);                    // Step 4: Login with phoneNumb
 router.get('/profile/:userId', getProfile);              // Get user profile
 router.put('/profile/:userId', updateProfile);           // Update user profile
 
-// Address Handling
-router.put('/address/:userId', addOrUpdateAddress);      // Add or Update address
-router.get('/address/:userId', getAddressByUserId);      // Get address
+// ➕ Add address
+router.post('/address/:userId', addAddress);
+
+// ✏️ Update address
+router.put('/address/:userId', updateAddress);
+
+// 🔍 Get address
+router.get('/address/:userId', getAddress);     // Get address
 
 // 🎁 Referral Info
 router.get('/referral/:userId', getReferralByUserId);    // Get referralCode & coins

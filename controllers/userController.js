@@ -1,139 +1,92 @@
+// ✅ User Controller with Complete Flow
+const mongoose = require('mongoose');
 const User = require('../models/userModel');
 const bcrypt = require('bcrypt');
-const { generateReferralCode } = require('../utils/referral'); // if separated
+const jwt = require('jsonwebtoken');
+const { generateReferralCode } = require('../utils/referral');
 const { generateTempToken, verifyTempToken } = require('../utils/jws');
 
-
-// ✅ TEMP GLOBAL TOKEN (holds latest registration)
 let latestToken = null;
+let latestVerifiedPhone = null;
 
-
-// ✅ REGISTER CONTROLLER
 const register = async (req, res) => {
   try {
     const { firstName, lastName, email, phoneNumber, referralCode } = req.body;
+    if (!firstName || !lastName || !email || !phoneNumber || !referralCode)
+      return res.status(400).json({ message: 'All fields are required' });
 
-    // 🔒 Check required
-    if (!firstName || !lastName || !email || !phoneNumber || !referralCode) {
-      return res.status(400).json({ message: 'All fields including referralCode are required ❌' });
-    }
-
-    // ❌ Check existing
     const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Email or phone already exists ❌' });
-    }
+    if (existingUser) return res.status(400).json({ message: 'User already exists' });
 
-    // ✅ Generate
     const generatedReferralCode = generateReferralCode();
     const otp = '1234';
-
-    // 🎯 Token payload
     const payload = {
-      firstName,
-      lastName,
-      email,
-      phoneNumber,
+      firstName, lastName, email, phoneNumber,
       referralCode: generatedReferralCode,
-      referredBy: referralCode,
-      otp,
-      createdAt: new Date().toISOString()
+      referredBy: referralCode, otp, createdAt: new Date().toISOString()
     };
 
-    // 🔐 Generate token for 1 min
     latestToken = generateTempToken(payload);
 
-    res.status(200).json({
-      message: 'OTP sent successfully 🔐',
-      otp,
-      token: latestToken,
-      referralCode: generatedReferralCode
-    });
-
+    res.status(200).json({ message: 'OTP sent successfully', otp, token: latestToken, referralCode: generatedReferralCode });
   } catch (err) {
-    console.error('Register Error:', err);
-    res.status(500).json({ error: 'Something went wrong during registration ❌' });
+    res.status(500).json({ message: 'Registration failed', error: err.message });
   }
 };
 
-// ✅ VERIFY OTP CONTROLLER
 const verifyOtp = async (req, res) => {
   try {
     const { otp } = req.body;
-
-    if (!otp) {
-      return res.status(400).json({ message: 'OTP is required ❌' });
-    }
-
-    if (!latestToken) {
-      return res.status(401).json({ message: 'OTP expired or not found. Please register again ❌' });
-    }
+    if (!otp || !latestToken) return res.status(400).json({ message: 'OTP or token missing' });
 
     const decoded = verifyTempToken(latestToken);
+    if (otp !== decoded.otp) return res.status(400).json({ message: 'Invalid OTP' });
 
-    if (otp !== decoded.otp) {
-      return res.status(400).json({ message: 'Invalid OTP ❌' });
-    }
-
-    // ✅ Save to DB
-    const newUser = new User({
+    const user = await User.create({
+      _id: new mongoose.Types.ObjectId(),
       firstName: decoded.firstName,
       lastName: decoded.lastName,
       email: decoded.email,
       phoneNumber: decoded.phoneNumber,
       referralCode: decoded.referralCode,
       referredBy: decoded.referredBy,
-      otp: decoded.otp
+      isVerified: true
     });
 
-    await newUser.save();
-
-    // ✅ Invalidate token after use
+    latestVerifiedPhone = decoded.phoneNumber;
     latestToken = null;
 
-    res.status(201).json({
-      message: '✅ OTP verified successfully. User registered!'
-    });
-
+    res.status(200).json({ message: 'OTP verified ✅', userId: user._id });
   } catch (err) {
-    console.error('OTP Verification Error:', err);
-
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: '⏰ OTP expired. Please register again.' });
-    }
-
-    res.status(500).json({ error: 'Something went wrong during OTP verification ❌' });
+    res.status(400).json({ message: 'OTP verification failed', error: err.message });
   }
 };
+
 const setPassword = async (req, res) => {
-  const { password } = req.body;
-
-  if (!password) {
-    return res.status(400).json({ message: 'Password is required' });
-  }
-
   try {
-    // Only verified users without a password can set a new password
-    const user = await User.findOne({ isVerified: true, password: null }).sort({ createdAt: -1 });
+    const { password } = req.body;
+    if (!password || !latestVerifiedPhone)
+      return res.status(400).json({ message: 'Password or phone missing' });
 
-    if (!user) {
-      return res.status(400).json({ message: 'User not found or password already set' });
-    }
+    const user = await User.findOne({ phoneNumber: latestVerifiedPhone });
+    if (!user) return res.status(400).json({ message: 'User not found' });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    user.password = hashedPassword;
+    if (user.password) return res.status(400).json({ message: 'Password already set' });
+
+    user.password = await bcrypt.hash(password, 10);
     await user.save();
+    latestVerifiedPhone = null;
 
-    res.status(200).json({ message: 'Password set successfully' });
+    res.status(200).json({ message: 'Password set successfully ✅' });
   } catch (err) {
     res.status(500).json({ message: 'Failed to set password', error: err.message });
   }
 };
 
-
 const login = async (req, res) => {
   const { phoneNumber, password } = req.body;
-  if (!phoneNumber || !password) return res.status(400).json({ message: 'All fields required' });
+  if (!phoneNumber || !password)
+    return res.status(400).json({ message: 'All fields required' });
 
   try {
     const user = await User.findOne({ phoneNumber });
@@ -143,9 +96,9 @@ const login = async (req, res) => {
     if (!match) return res.status(401).json({ message: 'Incorrect password' });
 
     res.status(200).json({
-      message: 'Login successful',
+      message: 'Login successful ✅',
       user: {
-        id: user._id,
+        userId: user._id,
         fullName: `${user.firstName} ${user.lastName}`,
         email: user.email,
         phoneNumber: user.phoneNumber
@@ -158,55 +111,108 @@ const login = async (req, res) => {
 
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId);
+    const { userId } = req.params;
+    const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     res.status(200).json({
-      fullName: `${user.firstName} ${user.lastName}`,
-      email: user.email,
-      phoneNumber: user.phoneNumber
+      message: 'Profile fetched ✅',
+      user: {
+        userId: user._id,
+        fullName: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        referralCode: user.referralCode,
+        coins: user.coins || 0
+      }
     });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to fetch profile', error: err.message });
+    res.status(500).json({ message: 'Profile fetch failed', error: err.message });
   }
 };
 
 const updateProfile = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.params.userId, req.body, { new: true });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const { userId } = req.params;
+    const updatedUser = await User.findByIdAndUpdate(userId, req.body, { new: true });
+    if (!updatedUser) return res.status(404).json({ message: 'User not found' });
 
     res.status(200).json({
-      message: 'Profile updated successfully',
-      fullName: `${user.firstName} ${user.lastName}`,
-      email: user.email,
-      phoneNumber: user.phoneNumber
+      message: 'Profile updated ✅',
+      user: {
+        userId: updatedUser._id,
+        fullName: `${updatedUser.firstName} ${updatedUser.lastName}`,
+        email: updatedUser.email,
+        phoneNumber: updatedUser.phoneNumber,
+        referralCode: updatedUser.referralCode,
+        coins: updatedUser.coins || 0
+      }
     });
   } catch (err) {
-    res.status(500).json({ message: 'Update failed', error: err.message });
+    res.status(500).json({ message: 'Profile update failed', error: err.message });
   }
 };
 
-const addOrUpdateAddress = async (req, res) => {
+const addAddress = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.params.userId, { address: req.body }, { new: true });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const { userId } = req.params;
+    const address = req.body;
 
-    res.status(200).json({ message: 'Address saved successfully', address: user.address });
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+
+    user.address = address;
+    await user.save();
+
+    res.status(200).json({
+      message: 'Address added successfully ✅',
+      address: user.address
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to save address', error: err.message });
+    res.status(500).json({ message: 'Failed to add address ❌', error: err.message });
   }
 };
 
-const getAddressByUserId = async (req, res) => {
+const getAddress = async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId).select('address');
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    res.status(200).json({ address: user.address });
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).select('address');
+    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+
+    res.status(200).json({
+      message: 'Address fetched successfully ✅',
+      address: user.address
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to get address', error: err.message });
+    res.status(500).json({ message: 'Failed to fetch address ❌', error: err.message });
   }
 };
+
+
+
+const updateAddress = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const newAddress = req.body;
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: { address: newAddress } },
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+
+    res.status(200).json({
+      message: 'Address updated successfully ✅',
+      address: user.address
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update address ❌', error: err.message });
+  }
+};
+
 
 const getReferralByUserId = async (req, res) => {
   try {
@@ -214,11 +220,10 @@ const getReferralByUserId = async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.status(200).json({ referralCode: user.referralCode, coins: user.coins });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to get referral info', error: err.message });
+    res.status(500).json({ message: 'Get referral failed', error: err.message });
   }
 };
 
-// ⬇️ Export all functions here
 module.exports = {
   register,
   verifyOtp,
@@ -226,7 +231,8 @@ module.exports = {
   login,
   getProfile,
   updateProfile,
-  addOrUpdateAddress,
-  getAddressByUserId,
+  addAddress,
+  getAddress,
+  updateAddress,
   getReferralByUserId
 };

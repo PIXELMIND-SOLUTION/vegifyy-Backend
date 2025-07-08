@@ -17,7 +17,7 @@ const io = require('socket.io')(server, {
 app.set('io', io);
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // ✅ Keep this for all routes. Don't wrap in a condition.
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ MongoDB Connected'))
@@ -38,3 +38,4 @@ const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+
