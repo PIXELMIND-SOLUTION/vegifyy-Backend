@@ -12,4 +12,4 @@ const verifyTempToken = (token) => {
   return jwt.verify(token, secretKey);
 };
 
-module.exports = { generateTempToken, verifyTempToken };
+module.exports ={ generateTempToken, verifyTempToken };

@@ -13,6 +13,9 @@ const {
   getAddress,
   updateAddress,
   deleteAddress, 
+  postLocation,
+  updateLocation,
+  getLocation,
   getReferralByUserId,
   
 } = require('../controllers/userController');
@@ -37,6 +40,17 @@ router.put('/address/:userId', updateAddress);
 // 🔍 Get address
 router.get('/address/:userId', getAddress);  
 router.delete('/address/:userId', deleteAddress);
+
+
+
+// POST location (only once)
+router.post('/location/:userId', postLocation);
+
+// PUT location (update)
+router.put('/location/:userId', updateLocation);
+
+// GET location
+router.get('/location/:userId', getLocation);
 
 
 // 🎁 Referral Info

@@ -1,26 +1,46 @@
 const mongoose = require('mongoose');
 
 //
-//Product Schema
+// Product Schema
 //
 const productSchema = new mongoose.Schema({
-  name:        { type: String, required: true },
-  price:       { type: Number, required: true },
-  category:    { type: String },
-  stock:       { type: Number, default: 0 },
-  description: { type: String }
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  category: {
+    type: String,
+    default: 'General'
+  },
+  stock: {
+    type: Number,
+    default: 0
+  },
+  description: {
+    type: String,
+    default: ''
+  }
+}, {
+  timestamps: true
 });
 
 const Product = mongoose.model('Product', productSchema);
 
+
 //
-//Order Schema
+// Order Schema
 //
 const orderSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     required: true,
-    ref: 'Auth' // Make sure 'Auth' model is defined somewhere
+    ref: 'Auth' // Replace 'Auth' with your actual user model if different
   },
   items: [
     {
@@ -29,23 +49,39 @@ const orderSchema = new mongoose.Schema({
         ref: 'Product',
         required: true
       },
-      quantity: { type: Number, required: true },
-      price:    { type: Number, required: true }
+      quantity: {
+        type: Number,
+        required: true,
+        min: 1
+      },
+      price: {
+        type: Number,
+        required: true,
+        min: 0
+      }
     }
   ],
-  totalAmount: { type: Number, required: true },
+  totalAmount: {
+    type: Number,
+    required: true,
+    min: 0
+  },
   status: {
     type: String,
     enum: ['pending', 'confirmed', 'ongoing', 'cancelled', 'shipped', 'delivered'],
     default: 'pending'
   },
-  orderDate: { type: Date, default: Date.now }
+  orderDate: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: true
 });
 
 const Order = mongoose.model('Order', orderSchema);
 
-//
-// Export both models
+// Export Both Models
 //
 module.exports = {
   Product,

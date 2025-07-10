@@ -9,7 +9,7 @@ const authSchema = new mongoose.Schema({
   isVerified: { type: Boolean, default: false },
   password: { type: String },
   referralCode: { type: String, unique: true },
-  referredBy: { type: String, default: null },  // saves the referral code used
+  referredBy: { type: String, default: null },
   coins: { type: Number, default: 0 },
   address: {
     addressLine1: { type: String },
@@ -18,7 +18,11 @@ const authSchema = new mongoose.Schema({
     state: { type: String },
     postalCode: { type: String },
     country: { type: String }
-  }
-}, { timestamps: true });
+  },
+  latitude: { type: Number },
+  longitude: { type: Number }
+}, {
+  timestamps: true // ✅ CORRECT placement
+});
 
 module.exports = mongoose.model('User', authSchema);

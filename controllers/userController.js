@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const User = require('../models/userModel');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { generateReferralCode } = require('../utils/referral');
+const { generateReferralCode } = require('../utils/refeeral');
 const { generateTempToken, verifyTempToken } = require('../utils/jws');
 
 let latestToken = null;
@@ -239,6 +239,88 @@ const deleteAddress = async (req, res) => {
   }
 };
 
+// ✅ POST Location (Only if location not already present)
+const postLocation = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { latitude, longitude } = req.body;
+
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ message: "Latitude and longitude are required" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+
+    if (user.latitude || user.longitude) {
+      return res.status(400).json({ message: 'Location already exists. Use PUT to update.' });
+    }
+
+    user.latitude = latitude;
+    user.longitude = longitude;
+    await user.save();
+
+    res.status(201).json({
+      message: 'Location added successfully ✅',
+      location: {
+        latitude: user.latitude,
+        longitude: user.longitude
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to add location ❌', error: err.message });
+  }
+};
+
+// ✅ PUT Location (Update existing)
+const updateLocation = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { latitude, longitude } = req.body;
+
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ message: "Latitude and longitude are required" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { latitude, longitude },
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+
+    res.status(200).json({
+      message: 'Location updated successfully ✅',
+      location: {
+        latitude: user.latitude,
+        longitude: user.longitude
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update location ❌', error: err.message });
+  }
+};
+
+// ✅ GET Location
+const getLocation = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).select('latitude longitude');
+    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+
+    res.status(200).json({
+      message: 'Location fetched ✅',
+      location: {
+        latitude: user.latitude,
+        longitude: user.longitude
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch location ❌', error: err.message });
+  }
+};
 
 
 const getReferralByUserId = async (req, res) => {
@@ -250,6 +332,7 @@ const getReferralByUserId = async (req, res) => {
     res.status(500).json({ message: 'Get referral failed', error: err.message });
   }
 };
+
 
 module.exports = {
   register,
@@ -263,5 +346,8 @@ module.exports = {
   getAddress,
   updateAddress,
   deleteAddress,
+  postLocation,
+  updateLocation,
+  getLocation,
   getReferralByUserId
 };
