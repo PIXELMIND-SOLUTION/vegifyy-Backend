@@ -6,8 +6,6 @@ const {createProduct,getAllProducts,updateProduct,deleteProduct,createOrder,getO
 const { submitHelpUs, getAllHelpUs } = require('../controllers/helpUsControler');
 const {createNotification,getAllNotifications,markAsRead,deleteNotification} = require('../controllers/notificationController');
 
-
-
 //
 // ✅ Product Routes
 //
