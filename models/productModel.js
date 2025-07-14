@@ -1,11 +1,4 @@
 const mongoose = require('mongoose');
-
-
-const isValidURL = (url) => {
-  const regex = /(https?:\/\/[^"]+)/g;
-  return regex.test(url);
-};
-
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -32,11 +25,7 @@ const productSchema = new mongoose.Schema({
   },
   image: {
     type: String,
-    default: '',
-    validate: {
-      validator: isValidURL,
-      message: 'Image URL is not valid'
-    }
+    default: ''
   },
   variation: {
     type: String,

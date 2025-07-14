@@ -1,13 +1,29 @@
 const Product = require("../models/productModel");
 const Order = require("../models/orderModel");
 const User = require("../models/userModel"); // For delivery info
-
+const cloudinary = require('../config/cloudinary');
 // -------------------- PRODUCT CONTROLLERS --------------------
 
 // Create Product
 exports.createProduct = async (req, res) => {
   try {
-    const product = await Product.create(req.body);
+    let imageUrl = "";
+
+    // ✅ Upload image to Cloudinary
+    if (req.file && req.file.path) {
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'products'
+      });
+      imageUrl = result.secure_url; // ✅ Get Cloudinary-hosted URL
+    }
+
+    const productData = {
+      ...req.body,
+      image: imageUrl
+    };
+
+    const product = await Product.create(productData);
+
     res.status(201).json({
       message: 'Product created',
       data: product
