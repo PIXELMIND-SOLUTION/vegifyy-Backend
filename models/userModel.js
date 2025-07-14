@@ -20,7 +20,13 @@ const authSchema = new mongoose.Schema({
     country: { type: String }
   },
   latitude: { type: Number },
-  longitude: { type: Number }
+  longitude: { type: Number },
+  myWishlist: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product'
+    }
+  ]
 }, {
   timestamps: true // ✅ CORRECT placement
 });
