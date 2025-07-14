@@ -14,4 +14,8 @@ router.get("/cart/:userId", controller.getCart);
 router.put("/cart/:userId/:productId", controller.updateCartItem);
 router.delete("/cart/:userId/:productId", controller.removeFromCart);
 
+router.post("/restaurant", upload.single("image"), controller.createRestaurant);
+router.get("/restaurant", controller.getAllRestaurants);
+
+
 module.exports = router;
