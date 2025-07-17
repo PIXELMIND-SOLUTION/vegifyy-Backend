@@ -6,6 +6,9 @@ const {
   verifyOtp,
   setPassword,
   login,
+  sendForgotOtp,
+  verifyForgotOtp,
+  resetForgotPassword,
   getProfile,
   updateProfile,
   deleteProfile,
@@ -23,9 +26,11 @@ const {
 // 🔐 Authentication Flow
 router.post('/register', register);              // Step 1: Register with referralCode (optional)
 router.post('/verify-otp', verifyOtp);           // Step 2: OTP verification (fixed OTP 1234)
-router.post('/set-password', setPassword);       // Step 3: Set password after OTP
-router.post('/login', login);                    // Step 4: Login with phoneNumber + password
-
+router.post('/set-password/:userId', setPassword);       // Step 3: Set password after OTP
+router.post('/login', login);    
+router.post('/forgot-password/send-otp', sendForgotOtp);
+router.post('/forgot-password/verify-otp', verifyForgotOtp);
+router.post('/forgot-password/reset', resetForgotPassword);
 // 👤 User Profile
 router.get('/profile/:userId', getProfile);              // Get user profile
 router.put('/profile/:userId', updateProfile);           // Update user profile
