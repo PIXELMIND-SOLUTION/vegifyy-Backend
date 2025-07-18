@@ -11,27 +11,58 @@ let latestToken = null;
 const register = async (req, res) => {
   try {
     const { firstName, lastName, email, phoneNumber, referralCode } = req.body;
-    if (!firstName || !lastName || !email || !phoneNumber || !referralCode)
-      return res.status(400).json({ message: 'All fields are required' });
 
-    const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
-    if (existingUser) return res.status(400).json({ message: 'User already exists' });
+    // Validate required fields (referralCode is optional)
+    if (!firstName || !lastName || !email || !phoneNumber) {
+      return res.status(400).json({
+        message: 'firstName, lastName, email, and phoneNumber are required'
+      });
+    }
 
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [{ email }, { phoneNumber }]
+    });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Generate new referral code for the user
     const generatedReferralCode = generateReferralCode();
+
+    // Hardcoded OTP for now
     const otp = '1234';
+
+    // Create payload for temp token
     const payload = {
-      firstName, lastName, email, phoneNumber,
-      referralCode: generatedReferralCode,
-      referredBy: referralCode, otp, createdAt: new Date().toISOString()
+      firstName,
+      lastName,
+      email,
+      phoneNumber,
+      referralCode: generatedReferralCode,       // this user's referral code
+      referredBy: referralCode || null,          // who referred this user, if any
+      otp,
+      createdAt: new Date().toISOString()
     };
 
+    // Generate temporary token
     latestToken = generateTempToken(payload);
 
-    res.status(200).json({ message: 'OTP sent successfully', otp, token: latestToken, referralCode: generatedReferralCode });
+    // Success response
+    res.status(200).json({
+      message: 'OTP sent successfully',
+      otp,
+      token: latestToken,
+      referralCode: generatedReferralCode
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Registration failed', error: err.message });
+    res.status(500).json({
+      message: 'Registration failed',
+      error: err.message
+    });
   }
 };
+
 
 const verifyOtp = async (req, res) => {
   try {
