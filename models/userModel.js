@@ -48,10 +48,14 @@ const userSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Virtual for confirm password
+// ✅ Fix: Use authSchema not userSchema
 userSchema.virtual('confirmPassword')
-  .get(function() { return this._confirmPassword; })
-  .set(function(value) { this._confirmPassword = value; });
+  .get(function () {
+    return this._confirmPassword;
+  })
+  .set(function (value) {
+    this._confirmPassword = value;
+  });
 
 // Validate password match
 userSchema.pre('save', function(next) {

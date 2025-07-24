@@ -7,6 +7,10 @@ const { generateReferralCode } = require('../utils/refeeral');
 const { generateTempToken, verifyTempToken } = require('../utils/jws');
 
 let latestToken = null;
+let tempForgotToken = null;
+let verifiedForgotPhone = null;
+
+
 
 const register = async (req, res) => {
   try {
