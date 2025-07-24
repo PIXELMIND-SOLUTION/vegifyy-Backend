@@ -16,6 +16,8 @@ router.put("/cart/:userId/:productId", controller.updateCartItem);
 router.delete("/cart/:userId/:productId", controller.removeFromCart);
 
 // Public routes
+// @route   POST /api/restaurants
+
 // POST /api/restaurants - Create new restaurant
 router.post('/restaurant', upload.single('image'),controller.createRestaurant);
 
@@ -26,10 +28,12 @@ router.get('/restaurant', controller.getRestaurants);
 router.get('/restaurant/:id', controller.getRestaurant);
 
 // PUT /api/restaurants/:id - Update restaurant (Admin only)
-router.put('/restaurant/:id', protect, admin, upload.single('image'), controller.updateRestaurant);
+router.put('/restaurant/:id',upload.single('image'), controller.updateRestaurant);
 
 // DELETE /api/restaurants/:id - Delete restaurant (Admin only)
-router.delete('/restaurant/:id', protect, admin, controller.deleteRestaurant);
+router.delete('/restaurant/:id',controller.deleteRestaurant);
+
+router.get('/top', controller.getTopRatedRestaurants); // ✅ Top-rated route
 
 // GET /api/restaurants/nearby/:userId - Get nearby restaurants
 router.get('/nearby/:userId', controller.getNearbyRestaurants);

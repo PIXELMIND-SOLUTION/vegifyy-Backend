@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
 const restaurantSchema = new mongoose.Schema({
-  restaurantName: { 
-    type: String, 
+  restaurantName: {
+    type: String,
     required: [true, 'Restaurant name is required'],
     trim: true
   },
@@ -16,6 +16,10 @@ const restaurantSchema = new mongoose.Schema({
     max: [5, 'Rating cannot exceed 5'],
     default: 0
   },
+  startingPrice: {
+    type: Number
+   
+  },
   location: {
     type: {
       type: String,
@@ -28,8 +32,8 @@ const restaurantSchema = new mongoose.Schema({
       required: true,
       validate: {
         validator: function(v) {
-          return v.length === 2 && 
-                 v[0] >= -180 && v[0] <= 180 && 
+          return v.length === 2 &&
+                 v[0] >= -180 && v[0] <= 180 &&
                  v[1] >= -90 && v[1] <= 90;
         },
         message: props => `${props.value} is not valid [longitude, latitude] coordinates!`
@@ -48,7 +52,6 @@ const restaurantSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Geospatial index
 restaurantSchema.index({ location: '2dsphere' });
 
 module.exports = mongoose.model('Restaurant', restaurantSchema);

@@ -28,14 +28,6 @@ const userSchema = new mongoose.Schema({
     coordinates: {
       type: [Number],
       default: [0, 0],
-      validate: {
-        validator: function(v) {
-          return v.length === 2 && 
-                 v[0] >= -180 && v[0] <= 180 && 
-                 v[1] >= -90 && v[1] <= 90;
-        },
-        message: props => `${props.value} is not valid [longitude, latitude] coordinates!`
-      }
     }
   },
   myWishlist: [{
@@ -48,22 +40,9 @@ const userSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// ✅ Fix: Use authSchema not userSchema
-userSchema.virtual('confirmPassword')
-  .get(function () {
-    return this._confirmPassword;
-  })
-  .set(function (value) {
-    this._confirmPassword = value;
-  });
 
-// Validate password match
-userSchema.pre('save', function(next) {
-  if (this.isModified('password') && this.password !== this.confirmPassword) {
-    throw new Error('Password and confirm password do not match');
-  }
-  next();
-});
+
+
 
 // Geospatial index
 userSchema.index({ location: '2dsphere' });

@@ -102,21 +102,35 @@ const setPassword = async (req, res) => {
     const { userId } = req.params;
     const { password } = req.body;
 
-    if (!userId || !password)
+    // Validate input
+    if (!userId || !password) {
       return res.status(400).json({ message: 'UserId and password are required' });
+    }
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid userId format' });
+    }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    if (user.password)
+    if (user.password) {
       return res.status(400).json({ message: 'Password already set' });
+    }
 
+    // Hash and set password
     user.password = await bcrypt.hash(password, 10);
     await user.save();
 
     res.status(200).json({ message: 'Password set successfully ✅' });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to set password', error: err.message });
+    res.status(500).json({
+      message: 'Failed to set password',
+      error: err.message
+    });
   }
 };
 
@@ -323,30 +337,55 @@ const postLocation = async (req, res) => {
     const { userId } = req.params;
     const { latitude, longitude } = req.body;
 
+    // Validate coordinates
     if (latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ message: "Latitude and longitude are required" });
+      return res.status(400).json({ 
+        success: false,
+        message: "Both latitude and longitude are required" 
+      });
     }
 
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
 
-    if (user.latitude || user.longitude) {
-      return res.status(400).json({ message: 'Location already exists. Use PUT to update.' });
+    if (isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Coordinates must be valid numbers" 
+      });
     }
 
-    user.latitude = latitude;
-    user.longitude = longitude;
-    await user.save();
+    // Update user location
+    const user = await User.findByIdAndUpdate(
+      userId,
+      {
+        location: {
+          type: 'Point',
+          coordinates: [lng, lat] // [longitude, latitude]
+        }
+      },
+      { new: true, runValidators: true }
+    );
 
-    res.status(201).json({
-      message: 'Location added successfully ✅',
-      location: {
-        latitude: user.latitude,
-        longitude: user.longitude
-      }
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User not found" 
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Location updated successfully",
+      location: user.location
     });
-  } catch (err) {
-    res.status(500).json({ message: 'Failed to add location ❌', error: err.message });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to update location",
+      error: error.message
+    });
   }
 };
 

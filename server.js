@@ -18,6 +18,7 @@ app.set('io', io);
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 
 mongoose.connect(process.env.MONGO_URI)
