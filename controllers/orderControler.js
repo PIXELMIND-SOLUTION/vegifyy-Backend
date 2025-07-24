@@ -5,16 +5,18 @@ const cloudinary = require('../config/cloudinary');
 // -------------------- PRODUCT CONTROLLERS --------------------
 
 // Create Product
+
+// ✅ CREATE Product
 exports.createProduct = async (req, res) => {
   try {
     let imageUrl = "";
 
-    // ✅ Upload image to Cloudinary
+    // Upload image to Cloudinary if present
     if (req.file && req.file.path) {
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: 'products'
       });
-      imageUrl = result.secure_url; // ✅ Get Cloudinary-hosted URL
+      imageUrl = result.secure_url;
     }
 
     const productData = {
@@ -25,34 +27,43 @@ exports.createProduct = async (req, res) => {
     const product = await Product.create(productData);
 
     res.status(201).json({
-      message: 'Product created',
+      success: true,
+      message: 'Product created successfully',
       data: product
     });
   } catch (err) {
     if (err.name === 'ValidationError') {
       const errors = Object.values(err.errors).map(e => e.message);
-      return res.status(400).json({ error: errors });
+      return res.status(400).json({ success: false, error: errors });
     }
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Error creating product", error: err.message });
   }
 };
 
 
-// Get all products
+
+// ✅ GET All Products (populate restaurant name)
 exports.getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find();
+    const products = await Product.find()
+      .populate("restaurantId", "restaurantName location image");
+
     res.status(200).json({ success: true, data: products });
   } catch (err) {
     res.status(500).json({ success: false, message: "Failed to fetch products", error: err.message });
   }
 };
 
-// Get product by ID
+
+// ✅ GET Product by ID
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.productId);
-    if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+    const product = await Product.findById(req.params.productId)
+      .populate("restaurantId", "restaurantName location image");
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
 
     res.status(200).json({ success: true, data: product });
   } catch (err) {
@@ -60,14 +71,15 @@ exports.getProductById = async (req, res) => {
   }
 };
 
-// Get products by category
+
+// ✅ GET Products by Category
 exports.getProductByCategory = async (req, res) => {
   try {
     const category = req.params.category;
 
     const products = await Product.find({ category });
 
-    if (products.length === 0) {
+    if (!products.length) {
       return res.status(404).json({
         success: false,
         message: `No products found in '${category}' category`
@@ -89,7 +101,7 @@ exports.getProductByCategory = async (req, res) => {
 };
 
 
-// Search products
+// ✅ SEARCH Products
 exports.searchProducts = async (req, res) => {
   try {
     const { keyword } = req.query;
@@ -104,36 +116,62 @@ exports.searchProducts = async (req, res) => {
       ]
     });
 
-    res.status(200).json({ success: true, results: products.length, data: products });
+    res.status(200).json({
+      success: true,
+      results: products.length,
+      data: products
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Error searching products", error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Error searching products",
+      error: err.message
+    });
   }
 };
 
-// Update product
+
+// ✅ UPDATE Product
 exports.updateProduct = async (req, res) => {
   try {
-    const updated = await Product.findByIdAndUpdate(req.params.productId, req.body, { new: true });
-    if (!updated) return res.status(404).json({ success: false, message: "Product not found" });
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.productId,
+      req.body,
+      { new: true }
+    );
 
-    res.status(200).json({ success: true, message: "Product updated", data: updated });
+    if (!updatedProduct) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Product updated successfully",
+      data: updatedProduct
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: "Error updating product", error: err.message });
   }
 };
 
-// Delete product
+
+// ✅ DELETE Product
 exports.deleteProduct = async (req, res) => {
   try {
-    const deleted = await Product.findByIdAndDelete(req.params.productId);
-    if (!deleted) return res.status(404).json({ success: false, message: "Product not found" });
+    const deletedProduct = await Product.findByIdAndDelete(req.params.productId);
 
-    res.status(200).json({ success: true, message: "Product deleted" });
+    if (!deletedProduct) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Product deleted successfully"
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: "Error deleting product", error: err.message });
   }
 };
-
 
 
 // 1. Toggle Wishlist (Add/Remove)
@@ -377,5 +415,69 @@ exports.assignDeliveryAndTrack = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: "Error assigning delivery partner", error: err.message });
+  }
+};
+
+
+// ✅ GET: Today's Bookings
+exports.getTodaysBookings = async (req, res) => {
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const orders = await Order.find({
+      orderDate: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
+    }).populate("userId", "fullName phoneNumber email")
+      .populate("items.productId", "name price image");
+
+    res.status(200).json({
+      success: true,
+      message: "Today's bookings fetched successfully",
+      results: orders.length,
+      data: orders
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching today's bookings",
+      error: err.message
+    });
+  }
+};
+
+// ✅ POST: Get Orders by Status
+exports.getOrdersByStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid status"
+      });
+    }
+
+    const orders = await Order.find({ status })
+      .populate("userId", "fullName phoneNumber email")
+      .populate("items.productId", "name price image");
+
+    res.status(200).json({
+      success: true,
+      message: `Orders with status '${status}' fetched successfully`,
+      results: orders.length,
+      data: orders
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching orders by status",
+      error: err.message
+    });
   }
 };

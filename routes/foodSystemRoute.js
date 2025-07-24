@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/foodSystemController");
 const upload = require("../utils/uploadMiddleware");
+const { protect, admin } = require('../utils/authMiddleware');
 
 router.post("/category", upload.single("image"), controller.createCategory);
 router.get("/category", controller.getAllCategories);
@@ -14,8 +15,24 @@ router.get("/cart/:userId", controller.getCart);
 router.put("/cart/:userId/:productId", controller.updateCartItem);
 router.delete("/cart/:userId/:productId", controller.removeFromCart);
 
-router.post("/restaurant", upload.single("image"), controller.createRestaurant);
-router.get("/restaurant", controller.getAllRestaurants);
+// Public routes
+// POST /api/restaurants - Create new restaurant
+router.post('/restaurant', upload.single('image'),controller.createRestaurant);
+
+// GET /api/restaurants - Get all restaurants
+router.get('/restaurant', controller.getRestaurants);
+
+// GET /api/restaurants/:id - Get single restaurant
+router.get('/restaurant/:id', controller.getRestaurant);
+
+// PUT /api/restaurants/:id - Update restaurant (Admin only)
+router.put('/restaurant/:id', protect, admin, upload.single('image'), controller.updateRestaurant);
+
+// DELETE /api/restaurants/:id - Delete restaurant (Admin only)
+router.delete('/restaurant/:id', protect, admin, controller.deleteRestaurant);
+
+// GET /api/restaurants/nearby/:userId - Get nearby restaurants
+router.get('/nearby/:userId', controller.getNearbyRestaurants);
 
 
 module.exports = router;

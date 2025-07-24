@@ -36,6 +36,8 @@ router.delete("/order/:orderId", controller.deleteOrder);
 // Extra Order Features
 router.patch("/order/:orderId/accept", controller.vendorAcceptOrder);
 router.patch("/order/:orderId/assign-delivery", controller.assignDeliveryAndTrack);
+router.get('/today-bookings', controller.getTodaysBookings);      // ✅ GET method
+router.post('/orders-by-status', controller.getOrdersByStatus);   // ✅ POST method
 
 
 

@@ -1,5 +1,7 @@
 const { Category, VegFood } = require("../models/foodSystemModel");
 const Cart=require("../models/cartModel");
+const mongoose = require('mongoose');
+const User = require('../models/userModel');
 const Restaurant = require("../models/restaurantModel");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
@@ -217,42 +219,280 @@ exports.removeFromCart = async (req, res) => {
 
 exports.createRestaurant = async (req, res) => {
   try {
-    const { restaurantName, rating, description, latitude, longitude } = req.body;
-
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: "Image is required" });
+    const { restaurantName, description, location, rating } = req.body;
+    
+    // Validate required fields
+    if (!restaurantName || !location || !req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Restaurant name, location, and image are required"
+      });
     }
 
+    // Upload image to Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "restaurants"
+      folder: "restaurants",
+      width: 1500,
+      crop: "scale"
     });
 
-    fs.unlinkSync(req.file.path); // remove local file
-
-    const newRest = await Restaurant.create({
+    // Create restaurant with Cloudinary URL
+    const restaurant = await Restaurant.create({
       restaurantName,
-      rating,
       description,
-      location: { latitude, longitude },
-      image: result.secure_url,
+      rating,
+      location: JSON.parse(location), // Assuming location is sent as JSON string
+      image: {
+        public_id: result.public_id,
+        url: result.secure_url
+      }
     });
+
+    // Delete temporary file
+    fs.unlinkSync(req.file.path);
 
     res.status(201).json({
       success: true,
-      message: "Restaurant created successfully",
-      data: newRest,
+      data: restaurant
     });
+
   } catch (err) {
-    console.error("SERVER ERROR:", err);
-    res.status(500).json({ success: false, message: "Server error", error: err.message });
+    console.error(err);
+    if (req.file) fs.unlinkSync(req.file.path); // Clean up if error occurs
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
-exports.getAllRestaurants = async (req, res) => {
+// @desc    Get all restaurants
+// @route   GET /api/restaurants
+// @access  Public
+exports.getRestaurants = async (req, res) => {
   try {
-    const data = await Restaurant.find();
-    res.status(200).json({ success: true, data });
+    const restaurants = await Restaurant.find();
+    res.status(200).json({
+      success: true,
+      count: restaurants.length,
+      data: restaurants
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Server error", error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+// @desc    Get single restaurant
+// @route   GET /api/restaurants/:id
+// @access  Public
+exports.getRestaurant = async (req, res) => {
+  try {
+    const restaurant = await Restaurant.findById(req.params.id);
+    
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: restaurant
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+// @desc    Update restaurant
+// @route   PUT /api/restaurants/:id
+// @access  Private/Admin
+exports.updateRestaurant = async (req, res) => {
+  try {
+    let restaurant = await Restaurant.findById(req.params.id);
+    
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant not found"
+      });
+    }
+
+    const data = {
+      restaurantName: req.body.restaurantName || restaurant.restaurantName,
+      description: req.body.description || restaurant.description,
+      rating: req.body.rating || restaurant.rating,
+      location: req.body.location ? JSON.parse(req.body.location) : restaurant.location
+    };
+
+    // Handle image update if new file is provided
+    if (req.file) {
+      // Delete old image from Cloudinary
+      await cloudinary.uploader.destroy(restaurant.image.public_id);
+
+      // Upload new image
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "restaurants",
+        width: 1500,
+        crop: "scale"
+      });
+
+      data.image = {
+        public_id: result.public_id,
+        url: result.secure_url
+      };
+
+      // Delete temporary file
+      fs.unlinkSync(req.file.path);
+    }
+
+    restaurant = await Restaurant.findByIdAndUpdate(req.params.id, data, {
+      new: true,
+      runValidators: true
+    });
+
+    res.status(200).json({
+      success: true,
+      data: restaurant
+    });
+
+  } catch (err) {
+    console.error(err);
+    if (req.file) fs.unlinkSync(req.file.path); // Clean up if error occurs
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+// @desc    Delete restaurant
+// @route   DELETE /api/restaurants/:id
+// @access  Private/Admin
+exports.deleteRestaurant = async (req, res) => {
+  try {
+    const restaurant = await Restaurant.findById(req.params.id);
+    
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant not found"
+      });
+    }
+
+    // Delete image from Cloudinary
+    await cloudinary.uploader.destroy(restaurant.image.public_id);
+
+    await restaurant.remove();
+
+    res.status(200).json({
+      success: true,
+      message: "Restaurant deleted successfully"
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+//**
+// * @desc    Get restaurants near a user's location
+ //* @route   GET /api/restaurants/nearby/:userId
+// * @access  Public
+// * @param   {string} userId - User ID to get location from
+ //* @param   {number} [distance=10] - Maximum distance in kilometers (optional)
+ //* @returns {Object} List of nearby restaurants with count
+ 
+exports.getNearbyRestaurants = async (req, res) => {
+  try {
+
+    const { userId } = req.params;
+    let maxDistance = parseFloat(req.query.distance) || 10; // Default: 10km
+
+    // Validate user ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID format",
+      });
+    }
+
+    // Validate distance parameter
+    if (isNaN(maxDistance) || maxDistance <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Distance must be a positive number",
+      });
+    }
+
+    // Find user and validate location
+    const user = await User.findById(userId).select('location');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (!user?.location?.coordinates) {
+      return res.status(400).json({
+        success: false,
+        message: "User location not available",
+      });
+    }
+
+    // Validate coordinates format
+    const [longitude, latitude] = user.location.coordinates;
+    if (longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user coordinates",
+      });
+    }
+
+    // Find nearby restaurants with pagination
+    const nearbyRestaurants = await Restaurant.find({
+      location: {
+        $near: {
+          $geometry: {
+            type: "Point",
+            coordinates: user.location.coordinates,
+          },
+          $maxDistance: maxDistance * 1000, // Convert km to meters
+        },
+      },
+    })
+    .select('-__v') // Exclude version key
+    .limit(100); // Limit results for performance
+
+    res.status(200).json({
+      success: true,
+      count: nearbyRestaurants.length,
+      maxDistance: `${maxDistance} km`,
+      userLocation: user.location.coordinates,
+      data: nearbyRestaurants,
+    });
+  } catch (err) {
+  
+    console.error('Error fetching nearby restaurants:', err);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching nearby restaurants",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
   }
 };

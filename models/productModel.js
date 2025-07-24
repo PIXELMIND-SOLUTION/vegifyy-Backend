@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -48,23 +49,14 @@ const productSchema = new mongoose.Schema({
       }
     }
   ],
-   // ✅ Location fields
-  locationName: {
-    type: String,
-    required: [true, 'locationName is required'],
+
+  // ✅ Restaurant Reference
+  restaurantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Restaurant',
   },
-  latitude: {
-    type: Number,
-    required: [true, 'latitude is required'],
-  },
-  longitude: {
-    type: Number,
-    required: [true, 'longitude is required'],
-  }
 }, {
   timestamps: true
 });
 
-const Product = mongoose.model('Product', productSchema);
-
-module.exports = Product;
+module.exports = mongoose.model('Product', productSchema);
