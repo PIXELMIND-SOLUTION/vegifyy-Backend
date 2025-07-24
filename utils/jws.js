@@ -12,12 +12,7 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET is not defined in environment variables');
 }
 
-/**
- * Generate JWT token
- * @param {string|Object} payload - User ID or payload object
- * @param {string} [expiresIn=JWT_EXPIRES_IN] - Token expiration time
- * @returns {string} JWT token
- */
+
 const generateToken = (payload, expiresIn = JWT_EXPIRES_IN) => {
   return jwt.sign(
     typeof payload === 'object' ? payload : { id: payload },
@@ -26,21 +21,12 @@ const generateToken = (payload, expiresIn = JWT_EXPIRES_IN) => {
   );
 };
 
-/**
- * Generate temporary short-lived token (1 minute)
- * @param {string|Object} payload - User ID or payload object
- * @returns {string} Temporary JWT token
- */
+
 const generateTempToken = (payload) => {
   return generateToken(payload, TEMP_TOKEN_EXPIRES_IN);
 };
 
-/**
- * Verify JWT token
- * @param {string} token - JWT token to verify
- * @returns {Object} Decoded token payload
- * @throws {Error} If token is invalid
- */
+
 const verifyToken = (token) => {
   return jwt.verify(token, JWT_SECRET);
 };
@@ -48,20 +34,12 @@ const verifyToken = (token) => {
 // Alias for verifyToken to maintain consistency
 const verifyTempToken = verifyToken;
 
-/**
- * Decode JWT token without verification
- * @param {string} token - JWT token to decode
- * @returns {Object} Decoded token payload
- */
+
 const decodeToken = (token) => {
   return jwt.decode(token);
 };
 
-/**
- * Get token from request headers
- * @param {Object} req - Express request object
- * @returns {string|null} Token if found, null otherwise
- */
+
 const getTokenFromHeader = (req) => {
   if (
     req.headers.authorization &&

@@ -1,75 +1,23 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  firstName: { 
-    type: String, 
-    required: [true, 'First name is required'],
-    trim: true
-  },
-  lastName: { 
-    type: String, 
-    required: [true, 'Last name is required'],
-    trim: true 
-  },
-  email: { 
-    type: String, 
-    required: [true, 'Email is required'],
-    unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
-  },
-  phoneNumber: { 
-    type: String, 
-    required: [true, 'Phone number is required'],
-    unique: true,
-    validate: {
-      validator: function(v) {
-        return /^\d{10}$/.test(v);
-      },
-      message: props => `${props.value} is not a valid 10-digit phone number!`
-    }
-  },
-  otp: { 
-    type: String,
-    select: false // Don't return OTP in queries
-  },
-  isVerified: { 
-    type: Boolean, 
-    default: false 
-  },
-  password: { 
-    type: String, 
-    required: [true, 'Password is required'],
-    select: false
-  },
-  referralCode: { 
-    type: String, 
-    unique: true,
-    uppercase: true,
-    trim: true
-  },
-  referredBy: { 
-    type: String, 
-    default: null,
-    trim: true
-  },
-  coins: { 
-    type: Number, 
-    default: 0,
-    min: 0
-  },
-  isAdmin: { 
-    type: Boolean, 
-    default: false 
-  },
+ firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  phoneNumber: { type: String, required: true, unique: true },
+  otp: { type: String },
+  isVerified: { type: Boolean, default: false },
+  password: { type: String },
+  referralCode: { type: String, unique: true },
+  referredBy: { type: String, default: null },
+  coins: { type: Number, default: 0 },
   address: {
-    addressLine1: { type: String, trim: true },
-    addressLine2: { type: String, trim: true },
-    city: { type: String, trim: true },
-    state: { type: String, trim: true },
-    postalCode: { type: String, trim: true },
-    country: { type: String, trim: true }
+    addressLine1: { type: String },
+    addressLine2: { type: String },
+    city: { type: String },
+    state: { type: String },
+    postalCode: { type: String },
+    country: { type: String }
   },
   location: {
     type: {
