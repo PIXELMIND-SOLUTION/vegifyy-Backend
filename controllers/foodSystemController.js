@@ -1,5 +1,5 @@
 const { Category, VegFood } = require("../models/foodSystemModel");
-const Cart=require("../models/cartModel");
+const Cart = require("../models/cartModel");
 const mongoose = require('mongoose');
 const User = require('../models/userModel');
 const Restaurant = require("../models/restaurantModel");
@@ -221,15 +221,16 @@ exports.removeFromCart = async (req, res) => {
 // @desc    Create a new restaurant
 // @route   POST /api/restaurants
 // @access  Private/Admin
+// CREATE restaurant
+// @desc    Create restaurant
 exports.createRestaurant = async (req, res) => {
   try {
-    const { restaurantName, description, location, rating, startingPrice } = req.body;
+    const { restaurantName, description, locationName, location, rating, startingPrice } = req.body;
 
-    // Validate required fields
-    if (!restaurantName || !location || !startingPrice || !req.file) {
+    if (!restaurantName || !location || !locationName || !startingPrice || !req.file) {
       return res.status(400).json({
         success: false,
-        message: "Restaurant name, location, starting price, and image are required"
+        message: "restaurantName, locationName, location, startingPrice, and image are required"
       });
     }
 
@@ -252,6 +253,7 @@ exports.createRestaurant = async (req, res) => {
     const restaurant = await Restaurant.create({
       restaurantName,
       description,
+      locationName,
       rating,
       startingPrice,
       location: parsedLocation,
@@ -285,7 +287,7 @@ exports.createRestaurant = async (req, res) => {
 // @desc    Get all restaurants
 // @route   GET /api/restaurants
 // @access  Public
-exports.getRestaurants = async (req, res) => {
+exports.getRestaurants= async (req, res) => {
   try {
     const restaurants = await Restaurant.find();
     res.status(200).json({
@@ -305,7 +307,7 @@ exports.getRestaurants = async (req, res) => {
 // @desc    Get single restaurant
 // @route   GET /api/restaurants/:id
 // @access  Public
-exports.getRestaurant = async (req, res) => {
+exports.getRestaurantbyid = async (req, res) => {
   try {
     const restaurant = await Restaurant.findById(req.params.id);
     if (!restaurant) {
@@ -344,27 +346,23 @@ exports.updateRestaurant = async (req, res) => {
     const data = {
       restaurantName: req.body.restaurantName || restaurant.restaurantName,
       description: req.body.description || restaurant.description,
+      locationName: req.body.locationName || restaurant.locationName,
       rating: req.body.rating || restaurant.rating,
       startingPrice: req.body.startingPrice || restaurant.startingPrice,
       location: req.body.location ? JSON.parse(req.body.location) : restaurant.location
     };
 
     if (req.file) {
-      // Delete old image from Cloudinary
       await cloudinary.uploader.destroy(restaurant.image.public_id);
-
-      // Upload new image
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: "restaurants",
         width: 1500,
         crop: "scale"
       });
-
       data.image = {
         public_id: result.public_id,
         url: result.secure_url
       };
-
       fs.unlinkSync(req.file.path);
     }
 
@@ -419,29 +417,47 @@ exports.deleteRestaurant = async (req, res) => {
 };
 
 
-
+// @desc    Get top-rated restaurants near a user's location
+// @route   GET /api/restaurants/top-rated-nearby/:userId
 // @access  Public
-exports.getTopRatedRestaurants = async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 5; // Default to top 5
+// @query   [limit] Optional, number of restaurants to return (default: 5)
 
-    const topRestaurants = await Restaurant.find({ rating: { $gt: 4 } }) // Only ratings above 4.5
-      .sort({ rating: -1 })
-      .limit(limit)
-      .select('-startingPrice'); // Exclude startingPrice field
+ exports.getTopRatedNearbyRestaurants = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Step 1: Find user by ID
+    const user = await User.findById(userId);
+
+    if (!user || !user.location || !Array.isArray(user.location.coordinates)) {
+      return res.status(404).json({ success: false, message: 'User or location not found' });
+    }
+
+    const userCoordinates = user.location.coordinates;
+
+    // Step 2: Find nearby restaurants within 5km with rating >= 4
+    const nearbyRestaurants = await Restaurant.find({
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: userCoordinates
+          },
+          $maxDistance: 5000 // meters = 5km
+        }
+      },
+      rating: { $gte: 4 } // ✅ Fix applied here
+    });
 
     res.status(200).json({
       success: true,
-      count: topRestaurants.length,
-      data: topRestaurants
+      message: 'Nearby top-rated restaurants found',
+      count: nearbyRestaurants.length,
+      data: nearbyRestaurants
     });
-
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: 'Server error',
-      error: err.message
-    });
+  } catch (error) {
+    console.error('Error fetching nearby restaurants:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
@@ -449,12 +465,12 @@ exports.getTopRatedRestaurants = async (req, res) => {
 
 //**
 // * @desc    Get restaurants near a user's location
- //* @route   GET /api/restaurants/nearby/:userId
+//* @route   GET /api/restaurants/nearby/:userId
 // * @access  Public
 // * @param   {string} userId - User ID to get location from
- //* @param   {number} [distance=10] - Maximum distance in kilometers (optional)
- //* @returns {Object} List of nearby restaurants with count
- 
+//* @param   {number} [distance=10] - Maximum distance in kilometers (optional)
+//* @returns {Object} List of nearby restaurants with count
+
 exports.getNearbyRestaurants = async (req, res) => {
   try {
     const { userId } = req.params;

@@ -18,7 +18,10 @@ const restaurantSchema = new mongoose.Schema({
   },
   startingPrice: {
     type: Number
-   
+  },
+  locationName: {
+    type: String,
+    trim: true
   },
   location: {
     type: {
@@ -31,10 +34,10 @@ const restaurantSchema = new mongoose.Schema({
       type: [Number],
       required: true,
       validate: {
-        validator: function(v) {
+        validator: function (v) {
           return v.length === 2 &&
-                 v[0] >= -180 && v[0] <= 180 &&
-                 v[1] >= -90 && v[1] <= 90;
+            v[0] >= -180 && v[0] <= 180 &&
+            v[1] >= -90 && v[1] <= 90;
         },
         message: props => `${props.value} is not valid [longitude, latitude] coordinates!`
       }
