@@ -1,10 +1,11 @@
 // ✅ User Controller with Complete Flow
 const mongoose = require('mongoose');
-const User = require('../models/userModel');
+const { User, Banner } = require('../models/userModel');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { generateReferralCode } = require('../utils/refeeral');
 const { generateTempToken, verifyTempToken } = require('../utils/jws');
+const cloudinary = require('../config/cloudinary');
 
 let latestToken = null;
 let tempForgotToken = null;
@@ -494,6 +495,79 @@ const getReferralByUserId = async (req, res) => {
 };
 
 
+/// ✅ CREATE
+const createBanner = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Image is required' });
+    }
+
+    const result = await cloudinary.uploader.upload(req.file.path);
+    const newBanner = await Banner.create({ image: result.secure_url });
+
+    fs.unlinkSync(req.file.path); // remove local file
+
+    return res.status(201).json({ message: 'Banner created ✅', data: newBanner });
+  } catch (err) {
+    return res.status(500).json({ message: 'Create failed ❌', error: err.message });
+  }
+};
+
+// ✅ READ ALL
+const getAllBanners = async (req, res) => {
+  try {
+    const banners = await Banner.find().sort({ createdAt: -1 });
+    return res.status(200).json({ message: 'Banners fetched ✅', data: banners });
+  } catch (err) {
+    return res.status(500).json({ message: 'Fetch failed ❌', error: err.message });
+  }
+};
+
+// ✅ READ BY ID
+const getBannerById = async (req, res) => {
+  try {
+    const banner = await Banner.findById(req.params.id);
+    if (!banner) return res.status(404).json({ message: 'Banner not found' });
+    return res.status(200).json({ data: banner });
+  } catch (err) {
+    return res.status(500).json({ message: 'Fetch by ID failed ❌', error: err.message });
+  }
+};
+
+// ✅ UPDATE
+const updateBanner = async (req, res) => {
+  try {
+    const banner = await Banner.findById(req.params.id);
+    if (!banner) return res.status(404).json({ message: 'Banner not found' });
+
+    let imageUrl = banner.image;
+
+    if (req.file) {
+      const result = await cloudinary.uploader.upload(req.file.path);
+      imageUrl = result.secure_url;
+      fs.unlinkSync(req.file.path);
+    }
+
+    banner.image = imageUrl;
+    await banner.save();
+
+    return res.status(200).json({ message: 'Banner updated ✅', data: banner });
+  } catch (err) {
+    return res.status(500).json({ message: 'Update failed ❌', error: err.message });
+  }
+};
+
+// ✅ DELETE
+const deleteBanner = async (req, res) => {
+  try {
+    const banner = await Banner.findByIdAndDelete(req.params.id);
+    if (!banner) return res.status(404).json({ message: 'Banner not found' });
+
+    return res.status(200).json({ message: 'Banner deleted ✅' });
+  } catch (err) {
+    return res.status(500).json({ message: 'Delete failed ❌', error: err.message });
+  }
+};
 module.exports = {
   register,
   verifyOtp,
@@ -512,5 +586,10 @@ module.exports = {
   postLocation,
   updateLocation,
   getLocation,
-  getReferralByUserId
+  getReferralByUserId, 
+  createBanner,
+  getAllBanners,
+  getBannerById,
+  updateBanner,
+  deleteBanner
 };

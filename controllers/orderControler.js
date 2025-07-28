@@ -116,99 +116,116 @@ exports.createProduct = async (req, res) => {
   }
 };
 
-// 🔍 GET ALL Products
-exports.getAllProducts= async (req, res) => {
+
+// ✅ GET all products
+exports.getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find().populate('restaurantId');
-    res.status(200).json({
-      success: true,
-      count: products.length,
-      data: products
-    });
+    const products = await Product.find().sort({ createdAt: -1 });
+    res.status(200).json({ success: true, data: products });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error fetching products",
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// 🔍 GET SINGLE Product
+// ✅ GET product by ID
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate('restaurantId');
-    
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-
-    // Increment view count
-    product.viewcount += 1;
-    await product.save();
-
-    res.status(200).json({
-      success: true,
-      data: product
-    });
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+    res.status(200).json({ success: true, data: product });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error fetching product",
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// ✏️ UPDATE Product
+
 exports.updateProduct = async (req, res) => {
   try {
-    let updateData = { ...req.body };
-    
-    if (req.file && req.file.path) {
+    const productId = req.params.id;
+    const existingProduct = await Product.findById(productId);
+
+    if (!existingProduct) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    let imageUrl = existingProduct.image;
+
+    // Update image if provided
+    if (req.file?.path) {
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: 'products'
       });
-      updateData.image = result.secure_url;
+      imageUrl = result.secure_url;
     }
 
-    if (typeof updateData.addOns === 'string') {
+    const { userId, restaurantId } = req.body;
+
+    let deliverytime = existingProduct.deliverytime;
+
+    // If location data is being updated, recalculate delivery time
+    if (userId && restaurantId) {
+      const user = await User.findById(userId);
+      const restaurant = await Restaurant.findById(restaurantId);
+
+      if (!user || !restaurant) {
+        return res.status(404).json({ success: false, message: "User or Restaurant not found" });
+      }
+
+      const userCoords = user.location?.coordinates;
+      const restaurantCoords = restaurant.location?.coordinates;
+
+      if (!userCoords || !restaurantCoords) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing coordinates for user or restaurant"
+        });
+      }
+
+      const distance = calculateDistance(userCoords, restaurantCoords);
+
+      if (distance <= 2) deliverytime = '15 mins';
+      else if (distance <= 5) deliverytime = '30 mins';
+      else if (distance <= 10) deliverytime = '45 mins';
+      else if (distance <= 20) deliverytime = '60 mins';
+      else deliverytime = '90+ mins';
+    }
+
+    const updatedData = {
+      ...req.body,
+      image: imageUrl,
+      deliverytime
+    };
+
+    // Parse addOns if needed
+    if (typeof updatedData.addOns === 'string') {
       try {
-        updateData.addOns = JSON.parse(updateData.addOns);
+        updatedData.addOns = JSON.parse(updatedData.addOns);
       } catch (err) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Add-ons must be a valid JSON array' 
+        return res.status(400).json({
+          success: false,
+          error: 'Add-ons must be a valid JSON array'
         });
       }
     }
 
-    const product = await Product.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
+    const updatedProduct = await Product.findByIdAndUpdate(productId, updatedData, {
+      new: true,
+      runValidators: true
+    });
 
     res.status(200).json({
       success: true,
-      message: 'Product updated successfully',
-      data: product
+      message: "Product updated successfully",
+      data: updatedProduct
     });
+
   } catch (err) {
+    console.error(err);
     if (err.name === 'ValidationError') {
       const errors = Object.values(err.errors).map(e => e.message);
       return res.status(400).json({ success: false, error: errors });
     }
+
     res.status(500).json({
       success: false,
       message: "Error updating product",
@@ -216,83 +233,38 @@ exports.updateProduct = async (req, res) => {
     });
   }
 };
-
-// ❌ DELETE Product
+// ✅ DELETE product
 exports.deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id);
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-
-    // Optional: Delete image from Cloudinary
-    if (product.image) {
-      const publicId = product.image.split('/').pop().split('.')[0];
-      await cloudinary.uploader.destroy(`products/${publicId}`);
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Product deleted successfully'
-    });
+    const deleted = await Product.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ success: false, message: "Product not found" });
+    res.status(200).json({ success: true, message: "Product deleted" });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error deleting product",
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// 🔍 GET PRODUCTS BY CATEGORY (contentname)
+// ✅ Get Products by Category
 exports.getProductsByCategory = async (req, res) => {
   try {
-    const products = await Product.find({ 
-      contentname: req.params.category 
-    }).populate('restaurantId');
-
-    res.status(200).json({
-      success: true,
-      count: products.length,
-      data: products
-    });
+    const { category } = req.params;
+    const products = await Product.find({ category });
+    res.status(200).json({ success: true, data: products });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error fetching products by category",
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// 🔍 SEARCH PRODUCTS
+// ✅ Search Products (by productName)
 exports.searchProducts = async (req, res) => {
   try {
-    const { query } = req.query;
-    
-    const products = await Product.find({
-      $or: [
-        { name: { $regex: query, $options: 'i' } },
-        { description: { $regex: query, $options: 'i' } },
-        { contentname: { $regex: query, $options: 'i' } }
-      ]
-    }).populate('restaurantId');
+    const { q } = req.query;
+    if (!q) return res.status(400).json({ success: false, message: "Query is required" });
 
-    res.status(200).json({
-      success: true,
-      count: products.length,
-      data: products
-    });
+    const products = await Product.find({ productName: { $regex: q, $options: 'i' } });
+    res.status(200).json({ success: true, data: products });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error searching products",
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 // 1. Toggle Wishlist (Add/Remove)

@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
- firstName: { type: String, required: true },
+  firstName: { type: String, required: true },
   lastName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   phoneNumber: { type: String, required: true, unique: true },
@@ -27,24 +27,30 @@ const userSchema = new mongoose.Schema({
     },
     coordinates: {
       type: [Number],
-      default: [0, 0],
+      default: [0, 0]
     }
   },
   myWishlist: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product'
   }]
-}, { 
+}, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-
-
-
-
-// Geospatial index
 userSchema.index({ location: '2dsphere' });
 
-module.exports = mongoose.model('User', userSchema);
+const bannerSchema = new mongoose.Schema({
+  image: {
+    type: String,
+    required: true
+  }
+}, { timestamps: true });
+
+// ✅ Named Exports
+const User = mongoose.model('User', userSchema);
+const Banner = mongoose.model('Banner', bannerSchema);
+
+module.exports = { User, Banner };

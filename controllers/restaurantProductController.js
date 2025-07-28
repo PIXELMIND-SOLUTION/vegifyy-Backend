@@ -2,7 +2,7 @@ const RestaurantProduct = require("../models/restaurantProductModel");
 const User = require("../models/userModel");
 const Restaurant = require("../models/restaurantModel");
 const cloudinary = require("../config/cloudinary");
-const fs = require("fs");
+
 
 // Haversine formula to calculate distance in km
 function calculateDistance(coord1, coord2) {
