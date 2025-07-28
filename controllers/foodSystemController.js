@@ -1,20 +1,23 @@
+// controllers/restaurantController.js
 const { Category, VegFood } = require("../models/foodSystemModel");
 const Cart = require("../models/cartModel");
-const mongoose = require('mongoose');
-const User = require('../models/userModel');
+const mongoose = require("mongoose");
+const User = require("../models/userModel");
 const Restaurant = require("../models/restaurantModel");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
 
-// CATEGORY SECTION
 
+// CATEGORY SECTION
 exports.createCategory = async (req, res) => {
   try {
     const { categoryName } = req.body;
     const file = req.file;
     if (!file) return res.status(400).json({ message: "Image is required" });
 
-    const uploaded = await cloudinary.uploader.upload(file.path, { folder: "categories" });
+    const uploaded = await cloudinary.uploader.upload(file.path, {
+      folder: "categories"
+    });
     fs.unlinkSync(file.path);
 
     const category = await Category.create({ categoryName, imageUrl: uploaded.secure_url });
@@ -26,40 +29,32 @@ exports.createCategory = async (req, res) => {
 
 exports.getAllCategories = async (req, res) => {
   try {
-    const categories = await Category.findAll();
+    const categories = await Category.find();
     res.status(200).json({ success: true, data: categories });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// FOOD SECTION
-
 exports.createVegFood = async (req, res) => {
   try {
-    const { name, price, rating, reviewCount, description, categoryId } = req.body;
+    const { name, rating, type, locationName } = req.body;
     const file = req.file;
 
-    if (!file) return res.status(400).json({ status: false, message: "Image is required" });
+    if (!file) {
+      return res.status(400).json({ status: false, message: "Image is required" });
+    }
 
-    // ✅ Upload to Cloudinary
-    const uploaded = await cloudinary.uploader.upload(file.path, {
-      folder: "vegFoods"
-    });
+    // Upload image to Cloudinary
+    const uploaded = await cloudinary.uploader.upload(file.path, { folder: "vegFoods" });
+    fs.unlinkSync(file.path); // Remove local file
 
-    // ✅ Delete local file
-    fs.unlinkSync(file.path);
-
-    // ✅ Save to DB
     const food = await VegFood.create({
       name,
-      price,
       rating,
-      reviewCount,
-      description,
-      image: uploaded.secure_url,
-      isVeg: true,
-      categoryId
+      type,
+      locationName,
+      image: uploaded.secure_url // ✅ Save image
     });
 
     res.status(201).json({
@@ -67,7 +62,6 @@ exports.createVegFood = async (req, res) => {
       message: "Veg food created successfully",
       data: food
     });
-
   } catch (err) {
     res.status(500).json({
       status: false,
@@ -77,29 +71,59 @@ exports.createVegFood = async (req, res) => {
   }
 };
 
-// ✅ Get All Veg Foods (with optional ?categoryId=)
+// Get all
 exports.getAllVegFoods = async (req, res) => {
   try {
-    const { categoryId } = req.query;
+    const foods = await VegFood.find().sort({ createdAt: -1 });
+    res.status(200).json({ status: true, data: foods });
+  } catch (error) {
+    res.status(500).json({ status: false, message: "Server error", error: error.message });
+  }
+};
 
-    const whereClause = { isVeg: true };
-    if (categoryId) {
-      whereClause.categoryId = categoryId;
+// Get by ID
+exports.getVegFoodById = async (req, res) => {
+  try {
+    const food = await VegFood.findById(req.params.id);
+    if (!food) return res.status(404).json({ status: false, message: "Veg food not found" });
+
+    res.status(200).json({ status: true, data: food });
+  } catch (error) {
+    res.status(500).json({ status: false, message: "Server error", error: error.message });
+  }
+};
+
+// Update
+exports.updateVegFood = async (req, res) => {
+  try {
+    const { name, rating, type, locationName } = req.body;
+    const updateData = { name, rating, type, locationName };
+
+    if (req.file) {
+      const uploaded = await cloudinary.uploader.upload(req.file.path, { folder: "vegFoods" });
+      fs.unlinkSync(req.file.path);
+      updateData.image = uploaded.secure_url;
     }
 
-    const foods = await VegFood.findAll({
-      where: whereClause,
-      include: [
-        {
-          model: Category,
-          attributes: ["id", "categoryName", "imageUrl"]
-        }
-      ]
-    });
+    const updated = await VegFood.findByIdAndUpdate(req.params.id, updateData, { new: true });
 
-    res.status(200).json({ status: true, data: foods });
-  } catch (err) {
-    res.status(500).json({ status: false, message: "Server error", error: err.message });
+    if (!updated) return res.status(404).json({ status: false, message: "Veg food not found" });
+
+    res.status(200).json({ status: true, message: "Veg food updated successfully", data: updated });
+  } catch (error) {
+    res.status(500).json({ status: false, message: "Server error", error: error.message });
+  }
+};
+
+// Delete
+exports.deleteVegFood = async (req, res) => {
+  try {
+    const deleted = await VegFood.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ status: false, message: "Veg food not found" });
+
+    res.status(200).json({ status: true, message: "Veg food deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ status: false, message: "Server error", error: error.message });
   }
 };
 // CART SECTION
@@ -223,6 +247,7 @@ exports.removeFromCart = async (req, res) => {
 // @access  Private/Admin
 // CREATE restaurant
 // @desc    Create restaurant
+
 exports.createRestaurant = async (req, res) => {
   try {
     const { restaurantName, description, locationName, location, rating, startingPrice } = req.body;
@@ -234,35 +259,53 @@ exports.createRestaurant = async (req, res) => {
       });
     }
 
+    // ✅ Parse and validate location string
     let parsedLocation;
     try {
-      parsedLocation = JSON.parse(location);
+      parsedLocation = JSON.parse(location); // Expecting { latitude: 17.6656, longitude: 78.2358 }
+      if (
+        !parsedLocation.latitude || 
+        !parsedLocation.longitude || 
+        typeof parsedLocation.latitude !== "number" || 
+        typeof parsedLocation.longitude !== "number"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Latitude and Longitude must be valid numbers"
+        });
+      }
     } catch (err) {
       return res.status(400).json({
         success: false,
-        message: "Invalid location format. Must be a valid JSON string"
+        message: "Invalid location format. Must be JSON with latitude and longitude"
       });
     }
 
+    // ✅ Upload image to Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
       folder: "restaurants",
       width: 1500,
       crop: "scale"
     });
 
+    // ✅ Create restaurant with proper GeoJSON location
     const restaurant = await Restaurant.create({
       restaurantName,
       description,
       locationName,
       rating,
       startingPrice,
-      location: parsedLocation,
+      location: {
+        type: "Point",
+        coordinates: [parsedLocation.longitude, parsedLocation.latitude]
+      },
       image: {
         public_id: result.public_id,
         url: result.secure_url
       }
     });
 
+    // ✅ Remove local image file after upload
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
@@ -276,6 +319,7 @@ exports.createRestaurant = async (req, res) => {
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
+
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -287,132 +331,109 @@ exports.createRestaurant = async (req, res) => {
 // @desc    Get all restaurants
 // @route   GET /api/restaurants
 // @access  Public
-exports.getRestaurants= async (req, res) => {
+// ✅ Get All Restaurants
+exports.getAllRestaurants = async (req, res) => {
   try {
     const restaurants = await Restaurant.find();
-    res.status(200).json({
-      success: true,
-      count: restaurants.length,
-      data: restaurants
-    });
+    res.status(200).json({ success: true, data: restaurants });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: err.message
-    });
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
 
-// @desc    Get single restaurant
-// @route   GET /api/restaurants/:id
-// @access  Public
-exports.getRestaurantbyid = async (req, res) => {
+// ✅ Get Restaurant by ID
+exports.getRestaurantById = async (req, res) => {
   try {
     const restaurant = await Restaurant.findById(req.params.id);
-    if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found"
-      });
-    }
+    if (!restaurant) return res.status(404).json({ success: false, message: "Restaurant not found" });
 
-    res.status(200).json({
-      success: true,
-      data: restaurant
-    });
+    res.status(200).json({ success: true, data: restaurant });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: err.message
-    });
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
 
-// @desc    Update restaurant
-// @route   PUT /api/restaurants/:id
-// @access  Private/Admin
+// ✅ Update Restaurant
 exports.updateRestaurant = async (req, res) => {
   try {
+    const { restaurantName, description, locationName, location, rating, startingPrice } = req.body;
+
     let restaurant = await Restaurant.findById(req.params.id);
-    if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found"
-      });
+    if (!restaurant) return res.status(404).json({ success: false, message: "Restaurant not found" });
+
+    // Parse and validate location
+    let parsedLocation;
+    if (location) {
+      try {
+        parsedLocation = JSON.parse(location);
+        if (!parsedLocation.latitude || !parsedLocation.longitude) {
+          return res.status(400).json({ success: false, message: "Latitude and Longitude are required" });
+        }
+      } catch (err) {
+        return res.status(400).json({ success: false, message: "Invalid location format" });
+      }
     }
 
-    const data = {
-      restaurantName: req.body.restaurantName || restaurant.restaurantName,
-      description: req.body.description || restaurant.description,
-      locationName: req.body.locationName || restaurant.locationName,
-      rating: req.body.rating || restaurant.rating,
-      startingPrice: req.body.startingPrice || restaurant.startingPrice,
-      location: req.body.location ? JSON.parse(req.body.location) : restaurant.location
-    };
-
+    // Upload new image if provided
     if (req.file) {
-      await cloudinary.uploader.destroy(restaurant.image.public_id);
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: "restaurants",
         width: 1500,
         crop: "scale"
       });
-      data.image = {
+
+      if (restaurant.image?.public_id) {
+        await cloudinary.uploader.destroy(restaurant.image.public_id);
+      }
+
+      restaurant.image = {
         public_id: result.public_id,
         url: result.secure_url
       };
-      fs.unlinkSync(req.file.path);
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
     }
 
-    restaurant = await Restaurant.findByIdAndUpdate(req.params.id, data, {
-      new: true,
-      runValidators: true
-    });
+    // Update fields
+    if (restaurantName) restaurant.restaurantName = restaurantName;
+    if (description) restaurant.description = description;
+    if (locationName) restaurant.locationName = locationName;
+    if (startingPrice) restaurant.startingPrice = startingPrice;
+    if (rating) restaurant.rating = rating;
+    if (parsedLocation) {
+      restaurant.location = {
+        type: "Point",
+        coordinates: [parsedLocation.longitude, parsedLocation.latitude]
+      };
+    }
 
-    res.status(200).json({
-      success: true,
-      data: restaurant
-    });
+    await restaurant.save();
+
+    res.status(200).json({ success: true, data: restaurant });
 
   } catch (err) {
-    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: err.message
-    });
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
 
-// @desc    Delete restaurant
-// @route   DELETE /api/restaurants/:id
-// @access  Private/Admin
+// ✅ Delete Restaurant
 exports.deleteRestaurant = async (req, res) => {
   try {
-    const restaurant = await Restaurant.findById(req.params.id);
-    if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found"
-      });
+    const restaurant = await Restaurant.findByIdAndDelete(req.params.id);
+    if (!restaurant) return res.status(404).json({ success: false, message: "Restaurant not found" });
+
+    if (restaurant.image?.public_id) {
+      await cloudinary.uploader.destroy(restaurant.image.public_id);
     }
 
-    await cloudinary.uploader.destroy(restaurant.image.public_id);
-    await restaurant.remove();
-
-    res.status(200).json({
-      success: true,
-      message: "Restaurant deleted successfully"
-    });
-
+    res.status(200).json({ success: true, message: "Restaurant deleted" });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: err.message
-    });
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
 
@@ -471,20 +492,23 @@ exports.deleteRestaurant = async (req, res) => {
 //* @param   {number} [distance=10] - Maximum distance in kilometers (optional)
 //* @returns {Object} List of nearby restaurants with count
 
+// Get nearby restaurants by user ID
+
+
 exports.getNearbyRestaurants = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Step 1: Find user by ID
+    // ✅ Step 1: Fetch user
     const user = await User.findById(userId);
-
     if (!user || !user.location || !Array.isArray(user.location.coordinates)) {
       return res.status(404).json({ success: false, message: 'User or location not found' });
     }
 
     const userCoordinates = user.location.coordinates;
+    console.log("User coordinates:", userCoordinates);
 
-    // Step 2: Find restaurants near the user within 5km
+    // ✅ Step 2: Fetch nearby restaurants within 5km
     const nearbyRestaurants = await Restaurant.find({
       location: {
         $near: {
@@ -492,18 +516,22 @@ exports.getNearbyRestaurants = async (req, res) => {
             type: 'Point',
             coordinates: userCoordinates
           },
-          $maxDistance: 5000 // meters = 5km
+          $maxDistance: 15000 // 5 km
         }
       }
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: 'Nearby restaurants found',
+      message: nearbyRestaurants.length ? 'Nearby restaurants found' : 'No nearby restaurants found',
       data: nearbyRestaurants
     });
   } catch (error) {
     console.error('Error fetching nearby restaurants:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
   }
 };

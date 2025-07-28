@@ -1,6 +1,7 @@
 // ✅ User Controller with Complete Flow
 const mongoose = require('mongoose');
-const { User, Banner } = require('../models/userModel');
+const User= require('../models/userModel');
+const Banner =require('../models/banner');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { generateReferralCode } = require('../utils/refeeral');

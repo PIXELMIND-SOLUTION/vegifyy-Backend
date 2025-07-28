@@ -13,10 +13,11 @@ router.post(
 router.get("/restaurant-products", controller.getAllRestaurantProducts);
 router.get("/restaurant-products/:id", controller.getRestaurantProductById);
 router.put(
-  "/restaurant-products/:id",
+  "/restaurant-product/:productId",
   upload.fields([{ name: 'recommendedImages', maxCount: 40 }]),
   controller.updateRestaurantProduct
 );
+
 router.delete("/restaurant-products/:id", controller.deleteRestaurantProduct);
 
 

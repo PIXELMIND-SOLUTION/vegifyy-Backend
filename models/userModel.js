@@ -38,19 +38,13 @@ const userSchema = new mongoose.Schema({
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
-});
 
-userSchema.index({ location: '2dsphere' });
-
-const bannerSchema = new mongoose.Schema({
-  image: {
-    type: String,
-    required: true
-  }
 }, { timestamps: true });
 
 // ✅ Named Exports
-const User = mongoose.model('User', userSchema);
-const Banner = mongoose.model('Banner', bannerSchema);
 
-module.exports = { User, Banner };
+// Create 2dsphere index for geospatial queries
+userSchema.index({ location: '2dsphere' });
+
+module.exports = mongoose.model('User', userSchema);
+ 

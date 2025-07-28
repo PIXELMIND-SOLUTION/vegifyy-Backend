@@ -31,16 +31,8 @@ const restaurantSchema = new mongoose.Schema({
       default: 'Point'
     },
     coordinates: {
-      type: [Number],
-      required: true,
-      validate: {
-        validator: function (v) {
-          return v.length === 2 &&
-            v[0] >= -180 && v[0] <= 180 &&
-            v[1] >= -90 && v[1] <= 90;
-        },
-        message: props => `${props.value} is not valid [longitude, latitude] coordinates!`
-      }
+      type: [Number], // [longitude, latitude]
+      required: true
     }
   },
   image: {

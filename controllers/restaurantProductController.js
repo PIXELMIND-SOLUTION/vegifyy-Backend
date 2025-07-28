@@ -39,14 +39,143 @@ exports.createRestaurantProduct = async (req, res) => {
       restaurantId
     } = req.body;
 
-    const recommendedArray = JSON.parse(recommended);
-    const imageFiles = req.files['recommendedImages'];
+    const recommendedArray = JSON.parse(recommended || '[]');
+    const imageFiles = req.files?.['recommendedImages'];
 
-    if (!restaurantName || !locationName || !type || !recommendedArray || !imageFiles || !userId || !restaurantId) {
-      return res.status(400).json({ success: false, message: "Required fields missing" });
+    // Validate required fields
+    if (
+      !restaurantName || !locationName || !type || !recommendedArray.length ||
+      !imageFiles || !userId || !restaurantId
+    ) {
+      return res.status(400).json({ success: false, message: "Required fields missing or invalid" });
     }
 
-    // ✅ Fetch locations from DB
+    // Get user and restaurant from DB
+    const user = await User.findById(userId);
+    const restaurant = await Restaurant.findById(restaurantId);
+
+    if (!user || !restaurant) {
+      return res.status(404).json({ success: false, message: "User or Restaurant not found" });
+    }
+
+    const userCoords = user.location?.coordinates;
+    const restaurantCoords = restaurant.location?.coordinates;
+
+    if (!userCoords || !restaurantCoords) {
+      return res.status(400).json({ success: false, message: "User or Restaurant location missing" });
+    }
+
+    // Calculate distance & estimated time
+    const distance = calculateDistance(userCoords, restaurantCoords);
+    const time = (distance / 0.5).toFixed(1); // Assuming 30km/hr => 0.5 km/min
+
+    // Upload recommended images
+    const uploadedImages = await Promise.all(
+      imageFiles.map(async (file) => {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: "product-images"
+        });
+        return { public_id: result.public_id, url: result.secure_url };
+      })
+    );
+
+    // Attach images to recommended items
+    const finalRecommended = recommendedArray.map((item, index) => ({
+      ...item,
+      image: uploadedImages[index]
+    }));
+
+    // Save to DB
+    const newProduct = await RestaurantProduct.create({
+      restaurantName,
+      locationName,
+      type: Array.isArray(type) ? type : [type],
+      rating,
+      viewCount,
+      recommended: finalRecommended,
+      user: user._id,
+      restaurant: restaurant._id,
+      timeAndKm: {
+        time: `${time} mins`,
+        distance: `${distance.toFixed(1)} km`
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Restaurant Product Created Successfully",
+      data: newProduct
+    });
+
+  } catch (error) {
+    console.error("❌ Error creating restaurant product:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
+  }
+};
+
+exports.getAllRestaurantProducts = async (req, res) => {
+  try {
+    const products = await RestaurantProduct.find()
+      .populate('user', 'firstName lastName email')
+      .populate('restaurant', 'restaurantName location')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: 'All restaurant products fetched successfully',
+      data: products
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+exports.getRestaurantProductById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await RestaurantProduct.findById(id)
+      .populate('user', 'firstName lastName email')
+      .populate('restaurant', 'restaurantName location');
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Restaurant product fetched successfully',
+      data: product
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.updateRestaurantProduct = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const {
+      restaurantName,
+      locationName,
+      type,
+      rating,
+      viewCount,
+      recommended,
+      userId,
+      restaurantId
+    } = req.body;
+
+    if (!productId) {
+      return res.status(400).json({ success: false, message: "Product ID is required" });
+    }
+
+    const existingProduct = await RestaurantProduct.findById(productId);
+    if (!existingProduct) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
     const user = await User.findById(userId);
     const restaurant = await Restaurant.findById(restaurantId);
 
@@ -61,115 +190,19 @@ exports.createRestaurantProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing user or restaurant coordinates" });
     }
 
-    // ✅ Calculate distance
     const distance = calculateDistance(userCoords, restaurantCoords);
-    const time = (distance / 0.5).toFixed(1); // Assume 30km/h => 0.5 km/min
+    const time = (distance / 0.5).toFixed(1);
 
-    // ✅ Upload Images
-    const uploadedImages = await Promise.all(
-      imageFiles.map(async (file) => {
-        const result = await cloudinary.uploader.upload(file.path, {
-          folder: "product-images"
-        });
-        return { public_id: result.public_id, url: result.secure_url };
-      })
-    );
-
-    const finalRecommended = recommendedArray.map((item, index) => ({
-      ...item,
-      image: uploadedImages[index]
-    }));
-
-    const newProduct = await RestaurantProduct.create({
-      restaurantName,
-      locationName,
-      type,
-      rating,
-      viewCount,
-      recommended: finalRecommended,
-      user: userId,
-      restaurant: restaurantId,
-      timeAndKm: {
-        time: `${time} mins`,
-        distance: `${distance.toFixed(1)} km`
-      }
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Restaurant Product Created Successfully",
-      data: newProduct
-    });
-
-  } catch (error) {
-    console.error("❌ Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-exports.getAllRestaurantProducts = async (req, res) => {
-  try {
-    const products = await RestaurantProduct.find()
-      .populate("user", "firstName lastName phoneNumber")
-      .populate("restaurant", "restaurantName location");
-
-    return res.status(200).json({
-      success: true,
-      count: products.length,
-      data: products,
-    });
-  } catch (error) {
-    console.error("❌ Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-exports.getRestaurantProductById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const product = await RestaurantProduct.findById(id)
-      .populate("user", "firstName lastName phoneNumber")
-      .populate("restaurant", "restaurantName location");
-
-    if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
-    }
-
-    return res.status(200).json({ success: true, data: product });
-  } catch (error) {
-    console.error("❌ Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-exports.updateRestaurantProduct = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      restaurantName,
-      locationName,
-      type,
-      rating,
-      viewCount,
-      recommended,
-      userId,
-      restaurantId
-    } = req.body;
+    let updatedRecommended = [];
 
     const recommendedArray = recommended ? JSON.parse(recommended) : [];
-    const imageFiles = req.files?.['recommendedImages'];
+    const imageFiles = req.files?.["recommendedImages"];
 
-    const product = await RestaurantProduct.findById(id);
-    if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
-    }
-
-    // Optional: Update images if provided
-    let updatedRecommended = product.recommended;
-    if (recommendedArray.length && imageFiles?.length === recommendedArray.length) {
+    if (recommendedArray.length && imageFiles?.length) {
       const uploadedImages = await Promise.all(
         imageFiles.map(async (file) => {
           const result = await cloudinary.uploader.upload(file.path, {
-            folder: "product-images",
+            folder: "product-images"
           });
           return { public_id: result.public_id, url: result.secure_url };
         })
@@ -177,66 +210,73 @@ exports.updateRestaurantProduct = async (req, res) => {
 
       updatedRecommended = recommendedArray.map((item, index) => ({
         ...item,
-        image: uploadedImages[index],
+        image: uploadedImages[index]
       }));
+    } else {
+      updatedRecommended = existingProduct.recommended; // keep existing if not updating
     }
 
-    // Update product fields
-    product.restaurantName = restaurantName || product.restaurantName;
-    product.locationName = locationName || product.locationName;
-    product.type = type || product.type;
-    product.rating = rating || product.rating;
-    product.viewCount = viewCount || product.viewCount;
-    product.recommended = updatedRecommended;
-    product.user = userId || product.user;
-    product.restaurant = restaurantId || product.restaurant;
+    // Update product
+    existingProduct.restaurantName = restaurantName || existingProduct.restaurantName;
+    existingProduct.locationName = locationName || existingProduct.locationName;
+    existingProduct.type = type || existingProduct.type;
+    existingProduct.rating = rating || existingProduct.rating;
+    existingProduct.viewCount = viewCount || existingProduct.viewCount;
+    existingProduct.recommended = updatedRecommended;
+    existingProduct.user = userId || existingProduct.user;
+    existingProduct.restaurant = restaurantId || existingProduct.restaurant;
+    existingProduct.timeAndKm = {
+      time: `${time} mins`,
+      distance: `${distance.toFixed(1)} km`
+    };
 
-    // Recalculate time & distance if coordinates updated
-    if (userId || restaurantId) {
-      const user = await User.findById(userId || product.user);
-      const restaurant = await Restaurant.findById(restaurantId || product.restaurant);
-      if (user && restaurant && user.location?.coordinates && restaurant.location?.coordinates) {
-        const distance = calculateDistance(
-          user.location.coordinates,
-          restaurant.location.coordinates
-        );
-        const time = (distance / 0.5).toFixed(1);
-        product.timeAndKm = {
-          time: `${time} mins`,
-          distance: `${distance.toFixed(1)} km`,
-        };
-      }
-    }
+    await existingProduct.save();
 
-    const updatedProduct = await product.save();
     return res.status(200).json({
       success: true,
-      message: "Restaurant Product Updated Successfully",
-      data: updatedProduct,
+      message: "Restaurant Product updated successfully",
+      data: existingProduct
     });
 
   } catch (error) {
-    console.error("❌ Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Update error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
 
 
 exports.deleteRestaurantProduct = async (req, res) => {
   try {
-    const { id } = req.params;
-    const product = await RestaurantProduct.findById(id);
+    const { productId } = req.params;
+
+    if (!productId) {
+      return res.status(400).json({ success: false, message: "Product ID is required" });
+    }
+
+    const product = await RestaurantProduct.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    await RestaurantProduct.findByIdAndDelete(id);
+    // Optionally delete Cloudinary images
+    if (product.recommended?.length) {
+      for (const item of product.recommended) {
+        if (item.image?.public_id) {
+          await cloudinary.uploader.destroy(item.image.public_id);
+        }
+      }
+    }
+
+    await RestaurantProduct.findByIdAndDelete(productId);
+
     return res.status(200).json({
       success: true,
-      message: "Restaurant Product Deleted Successfully",
+      message: "Restaurant Product deleted successfully"
     });
+
   } catch (error) {
-    console.error("❌ Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Delete error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
+

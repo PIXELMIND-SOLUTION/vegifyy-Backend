@@ -1,56 +1,40 @@
-const { DataTypes } = require("sequelize");
-const sequelize = require("../config/sequelize");
+const mongoose = require("mongoose");
 
-// ✅ Category Model
-const Category = sequelize.define("Category", {
+// ✅ Category Schema
+const categorySchema = new mongoose.Schema({
   categoryName: {
-    type: DataTypes.STRING,
-    allowNull: false
+    type: String,
+    required: true
   },
   imageUrl: {
-    type: DataTypes.STRING,
-    allowNull: false
+    type: String,
+    required: true
   }
-});
+}, { timestamps: true });
 
-// ✅ VegFood Model (NO mongoose here)
-const VegFood = sequelize.define("VegFood", {
+// ✅ VegFood Schema
+const vegFoodSchema = new mongoose.Schema({
   name: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  price: {
-    type: DataTypes.INTEGER,
-    allowNull: false
+    type: String,
+    required: true
   },
   rating: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0
+    type: Number,
+    default: 0
   },
-  reviewCount: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
+  type: {
+    type: String,
+    required: true
   },
-  description: {
-    type: DataTypes.STRING
-  },
-  image: {
-    type: DataTypes.STRING
-  },
-  isVeg: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true
-  },
-  categoryId: {
-    type: DataTypes.INTEGER,
-    allowNull: false
-  }
-});
+  locationName: {
+    type: String,
+    required: true
+  },image: { type: String, required: true }
+},
+ { timestamps: true });
 
-// ✅ Define association
-Category.hasMany(VegFood, { foreignKey: "categoryId" });
-VegFood.belongsTo(Category, { foreignKey: "categoryId" });
-
-sequelize.sync();
+// ✅ Export both models
+const Category = mongoose.model("Category", categorySchema);
+const VegFood = mongoose.model("VegFood", vegFoodSchema);
 
 module.exports = { Category, VegFood };
