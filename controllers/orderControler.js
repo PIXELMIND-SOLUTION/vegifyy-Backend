@@ -1,29 +1,98 @@
 const Product = require("../models/productModel");
 const Order = require("../models/orderModel");
+const Restaurant = require('../models/restaurantModel');
 const User = require("../models/userModel"); // For delivery info
 const cloudinary = require('../config/cloudinary');
-// -------------------- PRODUCT CONTROLLERS --------------------
 
-// Create Product
+// Haversine formula to calculate distance in kilometers
+function calculateDistance(coord1, coord2) {
+  const toRad = deg => deg * Math.PI / 180;
+  const [lng1, lat1] = coord1;
+  const [lng2, lat2] = coord2;
 
-// ✅ CREATE Product
+  const R = 6371; // Earth radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in km
+}
+
 exports.createProduct = async (req, res) => {
   try {
     let imageUrl = "";
 
-    // Upload image to Cloudinary if present
-    if (req.file && req.file.path) {
+    // Upload image to Cloudinary if provided
+    if (req.file?.path) {
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: 'products'
       });
       imageUrl = result.secure_url;
     }
 
+    const { userId, restaurantId } = req.body;
+    if (!userId || !restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: "userId and restaurantId are required"
+      });
+    }
+
+    // Get user & restaurant location data
+    const user = await User.findById(userId);
+    const restaurant = await Restaurant.findById(restaurantId);
+
+    if (!user || !restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "User or Restaurant not found"
+      });
+    }
+
+    const userCoords = user.location?.coordinates;
+    const restaurantCoords = restaurant.location?.coordinates;
+
+    if (!userCoords || !restaurantCoords) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing coordinates for user or restaurant"
+      });
+    }
+
+    // Calculate distance between user and restaurant
+    const distance = calculateDistance(userCoords, restaurantCoords);
+
+    // Set delivery time based on distance
+    let deliverytime = '60 mins';
+    if (distance <= 2) deliverytime = '15 mins';
+    else if (distance <= 5) deliverytime = '30 mins';
+    else if (distance <= 10) deliverytime = '45 mins';
+    else if (distance <= 20) deliverytime = '60 mins';
+    else deliverytime = '90+ mins';
+
+    // Parse addOns if it’s a JSON string
     const productData = {
       ...req.body,
-      image: imageUrl
+      image: imageUrl,
+      deliverytime
     };
 
+    if (typeof productData.addOns === 'string') {
+      try {
+        productData.addOns = JSON.parse(productData.addOns);
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          error: 'Add-ons must be a valid JSON array'
+        });
+      }
+    }
+
+    // Create product
     const product = await Product.create(productData);
 
     res.status(201).json({
@@ -31,64 +100,164 @@ exports.createProduct = async (req, res) => {
       message: 'Product created successfully',
       data: product
     });
+
   } catch (err) {
+    console.error(err);
     if (err.name === 'ValidationError') {
       const errors = Object.values(err.errors).map(e => e.message);
       return res.status(400).json({ success: false, error: errors });
     }
-    res.status(500).json({ success: false, message: "Error creating product", error: err.message });
+
+    res.status(500).json({
+      success: false,
+      message: "Error creating product",
+      error: err.message
+    });
   }
 };
 
-
-
-// ✅ GET All Products (populate restaurant name)
-exports.getAllProducts = async (req, res) => {
+// 🔍 GET ALL Products
+exports.getAllProducts= async (req, res) => {
   try {
-    const products = await Product.find()
-      .populate("restaurantId", "restaurantName location image");
-
-    res.status(200).json({ success: true, data: products });
+    const products = await Product.find().populate('restaurantId');
+    res.status(200).json({
+      success: true,
+      count: products.length,
+      data: products
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to fetch products", error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching products",
+      error: err.message
+    });
   }
 };
 
-
-// ✅ GET Product by ID
+// 🔍 GET SINGLE Product
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.productId)
-      .populate("restaurantId", "restaurantName location image");
-
+    const product = await Product.findById(req.params.id).populate('restaurantId');
+    
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
     }
 
-    res.status(200).json({ success: true, data: product });
+    // Increment view count
+    product.viewcount += 1;
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      data: product
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Error fetching product", error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching product",
+      error: err.message
+    });
   }
 };
 
-
-// ✅ GET Products by Category
-exports.getProductByCategory = async (req, res) => {
+// ✏️ UPDATE Product
+exports.updateProduct = async (req, res) => {
   try {
-    const category = req.params.category;
+    let updateData = { ...req.body };
+    
+    if (req.file && req.file.path) {
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'products'
+      });
+      updateData.image = result.secure_url;
+    }
 
-    const products = await Product.find({ category });
+    if (typeof updateData.addOns === 'string') {
+      try {
+        updateData.addOns = JSON.parse(updateData.addOns);
+      } catch (err) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Add-ons must be a valid JSON array' 
+        });
+      }
+    }
 
-    if (!products.length) {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!product) {
       return res.status(404).json({
         success: false,
-        message: `No products found in '${category}' category`
+        message: 'Product not found'
       });
     }
 
     res.status(200).json({
       success: true,
-      message: `Products in '${category}' category`,
+      message: 'Product updated successfully',
+      data: product
+    });
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ success: false, error: errors });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error updating product",
+      error: err.message
+    });
+  }
+};
+
+// ❌ DELETE Product
+exports.deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndDelete(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+
+    // Optional: Delete image from Cloudinary
+    if (product.image) {
+      const publicId = product.image.split('/').pop().split('.')[0];
+      await cloudinary.uploader.destroy(`products/${publicId}`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Product deleted successfully'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Error deleting product",
+      error: err.message
+    });
+  }
+};
+
+// 🔍 GET PRODUCTS BY CATEGORY (contentname)
+exports.getProductsByCategory = async (req, res) => {
+  try {
+    const products = await Product.find({ 
+      contentname: req.params.category 
+    }).populate('restaurantId');
+
+    res.status(200).json({
+      success: true,
+      count: products.length,
       data: products
     });
   } catch (err) {
@@ -100,25 +269,22 @@ exports.getProductByCategory = async (req, res) => {
   }
 };
 
-
-// ✅ SEARCH Products
+// 🔍 SEARCH PRODUCTS
 exports.searchProducts = async (req, res) => {
   try {
-    const { keyword } = req.query;
-    const regex = new RegExp(keyword, "i");
-
+    const { query } = req.query;
+    
     const products = await Product.find({
       $or: [
-        { name: regex },
-        { category: regex },
-        { description: regex },
-        { image: regex }
+        { name: { $regex: query, $options: 'i' } },
+        { description: { $regex: query, $options: 'i' } },
+        { contentname: { $regex: query, $options: 'i' } }
       ]
-    });
+    }).populate('restaurantId');
 
     res.status(200).json({
       success: true,
-      results: products.length,
+      count: products.length,
       data: products
     });
   } catch (err) {
@@ -129,51 +295,6 @@ exports.searchProducts = async (req, res) => {
     });
   }
 };
-
-
-// ✅ UPDATE Product
-exports.updateProduct = async (req, res) => {
-  try {
-    const updatedProduct = await Product.findByIdAndUpdate(
-      req.params.productId,
-      req.body,
-      { new: true }
-    );
-
-    if (!updatedProduct) {
-      return res.status(404).json({ success: false, message: "Product not found" });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Product updated successfully",
-      data: updatedProduct
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: "Error updating product", error: err.message });
-  }
-};
-
-
-// ✅ DELETE Product
-exports.deleteProduct = async (req, res) => {
-  try {
-    const deletedProduct = await Product.findByIdAndDelete(req.params.productId);
-
-    if (!deletedProduct) {
-      return res.status(404).json({ success: false, message: "Product not found" });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Product deleted successfully"
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: "Error deleting product", error: err.message });
-  }
-};
-
-
 // 1. Toggle Wishlist (Add/Remove)
 exports.addToWishlist = async (req, res) => {
   const { userId } = req.params;

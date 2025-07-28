@@ -1,5 +1,22 @@
 const mongoose = require('mongoose');
 
+const reviewSchema = new mongoose.Schema({
+  name: {
+    type: String,
+  },
+  rating: {
+    type: Number,
+    min: [1, 'Rating must be at least 1'],
+    max: [5, 'Rating cannot exceed 5']
+  },
+  locationname: {
+    type: String,
+  },
+  content: {
+    type: String,
+  }
+}, { timestamps: true });
+
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -10,15 +27,6 @@ const productSchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Price is required'],
     min: [0, 'Price must be a positive number']
-  },
-  category: {
-    type: String,
-    default: 'General'
-  },
-  stock: {
-    type: Number,
-    default: 0,
-    min: [0, 'Stock must be a non-negative number']
   },
   description: {
     type: String,
@@ -34,8 +42,14 @@ const productSchema = new mongoose.Schema({
       values: ['Half', 'Full'],
       message: 'Variation can only be Half or Full'
     },
+    
     default: 'Full'
   },
+  userId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'User',
+  required: true
+},
   addOns: [
     {
       name: {
@@ -49,8 +63,31 @@ const productSchema = new mongoose.Schema({
       }
     }
   ],
+  locationname: {
+    type: String,
+    required: [true, 'Location name is required']
+  },
+  rating: {
+    type: Number,
+    default: 0,
+    min: [0, 'Rating cannot be less than 0'],
+    max: [5, 'Rating cannot exceed 5']
+  },
+  viewcount: {
+    type: Number,
+    default: 0
+  },
+  contentname: {
+    type: String,
+    required: [true, 'Content name is required']
+  },
+ deliverytime: {
+  type: String,
+  required: [true, 'Delivery time is required'] // remove enum
+},
+  reviews: [reviewSchema],
 
-  // ✅ Restaurant Reference
+  // Restaurant Reference
   restaurantId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Restaurant',

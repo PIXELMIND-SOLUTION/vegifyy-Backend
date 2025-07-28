@@ -4,41 +4,47 @@ const {savePrivacyPolicy,getPrivacyPolicy} = require('../controllers/privacyPoli
 const {upsertAboutUs,getAboutUs} = require('../controllers/aboutUsController');
 const { submitHelpUs, getAllHelpUs } = require('../controllers/helpUsControler');
 const {createNotification,getAllNotifications,markAsRead,deleteNotification} = require('../controllers/notificationController');
-const controller = require("../controllers/orderControler");
-const upload = require("../utils/multer");
+const controller = require('../controllers/orderControler');
+const upload = require('../utils/multer');
+
 
 // ---------- PRODUCT ROUTES ----------
-router.post("/product", upload.single("image"), controller.createProduct);
-router.get("/products", controller.getAllProducts);
-router.get("/product/:productId", controller.getProductById);
-router.get("/products/search", controller.searchProducts);
-router.put("/product/:productId", controller.updateProduct);
-router.delete("/product/:productId", controller.deleteProduct);
-router.get('/category/:category', controller.getProductByCategory);
-// Toggle wishlist (add/remove)
-router.post("/wishlist/:userId",controller.addToWishlist);
+router.post('/product', upload.single('image'), controller.createProduct);
+router.get('/products', controller.getAllProducts);
+router.get('/product/:id', controller.getProductById);
+router.put('/product/:id', upload.single('image'), controller.updateProduct);
+router.delete('/product/:id', controller.deleteProduct);
 
-// Get all wishlist items
-router.get("/wishlist/:userId", controller.getWishlist);
+// Get products by category (contentname)
+router.get('/products/category/:category', controller.getProductsByCategory);
 
-// Remove a specific item
-router.delete("/wishlist/:userId/:productId", controller.removeFromWishlist);
+// Search products
+router.get('/products/search/query', controller.searchProducts);
 
+// Wishlist
+router.post('/wishlist/toggle/:userId', controller.addToWishlist);
+router.get('/wishlist/:userId', controller.getWishlist);
+router.delete('/wishlist/:userId/:productId', controller.removeFromWishlist);
 
 
 // ---------- ORDER ROUTES ----------
-router.post("/order", controller.createOrder);
-router.get("/orders", controller.getAllOrders);
-router.get("/order/:orderId", controller.getOrderById);
-router.put("/order/:orderId", controller.updateOrder);
-router.delete("/order/:orderId", controller.deleteOrder);
+router.post('/order', controller.createOrder);
+router.get('/orders', controller.getAllOrders);
+router.get('/order/:orderId', controller.getOrderById);
+router.put('/order/:orderId', controller.updateOrder);
+router.delete('/order/:orderId', controller.deleteOrder);
 
-// Extra Order Features
-router.patch("/order/:orderId/accept", controller.vendorAcceptOrder);
-router.patch("/order/:orderId/assign-delivery", controller.assignDeliveryAndTrack);
-router.get('/today-bookings', controller.getTodaysBookings);      // ✅ GET method
-router.post('/orders-by-status', controller.getOrdersByStatus);   // ✅ POST method
+// Vendor accepts order
+router.put('/order/:orderId/accept', controller.vendorAcceptOrder);
 
+// Assign delivery partner
+router.put('/order/:orderId/assign-delivery', controller.assignDeliveryAndTrack);
+
+// Get today's bookings
+router.get('/orders/today', controller.getTodaysBookings);
+
+// Get orders by status
+router.post('/orders/status', controller.getOrdersByStatus);
 
 
 router.post('/help', submitHelpUs);

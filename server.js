@@ -6,6 +6,11 @@ const dotenv = require('dotenv');
 const authRoutes=require('./routes/authroutes');
 const addressRoutes = require('./routes/addressRoute');
 const routes = require("./routes/foodSystemRoute");
+const restaurantProduc = require("./routes/restaurantProductRoute");
+
+
+
+
 dotenv.config();
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +37,7 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/api',addressRoutes);
 app.use('/api',authRoutes);
 app.use('/api',routes);
+app.use('/api',restaurantProduc)
 
 
 // Socket.IO connection

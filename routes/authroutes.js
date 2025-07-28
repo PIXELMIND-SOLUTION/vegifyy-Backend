@@ -30,7 +30,7 @@ router.post('/set-password/:userId', setPassword);       // Step 3: Set password
 router.post('/login', login);    
 router.post('/forgot-password/send-otp', sendForgotOtp);
 router.post('/forgot-password/verify-otp', verifyForgotOtp);
-router.post('/forgot-password/reset', resetForgotPassword);
+router.post('/forgot-password/reset/:userId', resetForgotPassword);
 // 👤 User Profile
 router.get('/profile/:userId', getProfile);              // Get user profile
 router.put('/profile/:userId', updateProfile);           // Update user profile

@@ -175,30 +175,73 @@ const sendForgotOtp = async (req, res) => {
 const verifyForgotOtp = async (req, res) => {
   try {
     const { otp } = req.body;
-    if (!otp || otp !== '1234' || !tempForgotToken) return res.status(400).json({ message: "Invalid OTP" });
+
+    // Check for required conditions
+    if (!otp || otp !== '1234' || !tempForgotToken) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    // Decode the temp token
     const decoded = verifyTempToken(tempForgotToken);
+
+    // Extract phone and userId
     verifiedForgotPhone = decoded.phoneNumber;
+    const userId = decoded.userId;
+
+    // Clear the token after use
     tempForgotToken = null;
-    return res.status(200).json({ message: "OTP verified ✅" });
+
+    // Send response with userId and success message
+    return res.status(200).json({ 
+      userId: userId,
+      message: "OTP verified ✅"
+    });
+
   } catch (err) {
-    return res.status(400).json({ message: "OTP verification failed ❌", error: err.message });
+    return res.status(400).json({ 
+      message: "OTP verification failed ❌", 
+      error: err.message 
+    });
   }
 };
 
 const resetForgotPassword = async (req, res) => {
   try {
+    const { userId } = req.params;
     const { newPassword, confirmPassword } = req.body;
-    if (!verifiedForgotPhone) return res.status(400).json({ message: "OTP verification required" });
-    if (newPassword !== confirmPassword) return res.status(400).json({ message: "Passwords do not match" });
-    const user = await User.findOne({ phoneNumber: verifiedForgotPhone });
+
+    if (!verifiedForgotPhone) {
+      return res.status(400).json({ message: "OTP verification required" });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match" });
+    }
+
+    // Find user by userId and check if phone matches verified one
+    const user = await User.findById(userId);
+
+    if (!user || user.phoneNumber !== verifiedForgotPhone) {
+      return res.status(404).json({ message: "User not found or phone mismatch" });
+    }
+
+    // Hash and save the new password
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
+
+    // Clear temp variable
     verifiedForgotPhone = null;
+
     return res.status(200).json({ message: "Password reset successful ✅" });
+
   } catch (err) {
-    return res.status(500).json({ message: "Password reset failed ❌", error: err.message });
+    return res.status(500).json({ 
+      message: "Password reset failed ❌", 
+      error: err.message 
+    });
   }
 };
+
 
 
 const getProfile = async (req, res) => {
