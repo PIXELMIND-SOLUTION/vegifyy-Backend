@@ -24,7 +24,11 @@ const restaurantProductSchema = new mongoose.Schema({
   viewCount: { type: Number, default: 0 },
   recommended: [recommendedSchema],
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  restaurant: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant', required: true }
+restaurantId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Restaurant",
+  required: true
+},
 }, { timestamps: true
  }
 );

@@ -11,7 +11,7 @@ router.post(
   controller.createRestaurantProduct
 );
 router.get("/restaurant-products", controller.getAllRestaurantProducts);
-router.get("/restaurant-products/:id", controller.getRestaurantProductById);
+router.get("/restaurant-products/:restaurantId", controller.getProductsByRestaurant);
 router.put(
   "/restaurant-product/:productId",
   upload.fields([{ name: 'recommendedImages', maxCount: 40 }]),

@@ -2,6 +2,7 @@ const RestaurantProduct = require("../models/restaurantProductModel");
 const User = require("../models/userModel");
 const Restaurant = require("../models/restaurantModel");
 const cloudinary = require("../config/cloudinary");
+const mongoose = require("mongoose");
 
 
 // Haversine formula to calculate distance in km
@@ -94,7 +95,7 @@ exports.createRestaurantProduct = async (req, res) => {
       viewCount,
       recommended: finalRecommended,
       user: user._id,
-      restaurant: restaurant._id,
+      restaurantId: restaurant._id,
       timeAndKm: {
         time: `${time} mins`,
         distance: `${distance.toFixed(1)} km`
@@ -116,9 +117,7 @@ exports.createRestaurantProduct = async (req, res) => {
 exports.getAllRestaurantProducts = async (req, res) => {
   try {
     const products = await RestaurantProduct.find()
-      .populate('user', 'firstName lastName email')
-      .populate('restaurant', 'restaurantName location')
-      .sort({ createdAt: -1 });
+     
 
     return res.status(200).json({
       success: true,
@@ -130,26 +129,39 @@ exports.getAllRestaurantProducts = async (req, res) => {
   }
 };
 
-
-exports.getRestaurantProductById = async (req, res) => {
+// Get all products for a specific restaurant
+exports.getProductsByRestaurant = async (req, res) => {
   try {
-    const { id } = req.params;
+    const restaurantId = req.params.restaurantId;
 
-    const product = await RestaurantProduct.findById(id)
-      .populate('user', 'firstName lastName email')
-      .populate('restaurant', 'restaurantName location');
-
-    if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid restaurant ID format" 
+      });
     }
 
-    return res.status(200).json({
+    const products = await RestaurantProduct.find({ restaurantId })
+    
+    if (!products || products.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "No products found for this restaurant" 
+      });
+    }
+
+    res.status(200).json({
       success: true,
-      message: 'Restaurant product fetched successfully',
-      data: product
+      message: "Restaurant products fetched successfully",
+      data: products
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Error fetching restaurant products:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Server error", 
+      error: error.message 
+    });
   }
 };
 
