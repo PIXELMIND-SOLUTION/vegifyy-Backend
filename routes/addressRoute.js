@@ -5,21 +5,16 @@ const {upsertAboutUs,getAboutUs} = require('../controllers/aboutUsController');
 const { submitHelpUs, getAllHelpUs } = require('../controllers/helpUsControler');
 const {createNotification,getAllNotifications,markAsRead,deleteNotification} = require('../controllers/notificationController');
 const controller = require('../controllers/orderControler');
-const upload = require('../utils/multer');
+const upload = require("../utils/up2");
 
 
 // ---------- PRODUCT ROUTES ----------
-router.post('/product', upload.single('image'), controller.createProduct);
+router.post('/product',upload, controller.createProduct);
 router.get('/products', controller.getAllProducts);
 router.get('/product/:id', controller.getProductById);
-router.put('/product/:id', upload.single('image'), controller.updateProduct);
-router.delete('/product/:id', controller.deleteProduct);
+router.put('/product/:id', upload, controller.updateProductById);
+router.delete('/product/:id', controller.deleteProductById);
 
-// Get products by category (contentname)
-router.get('/products/category/:category', controller.getProductsByCategory);
-
-// Search products
-router.get('/products/search/query', controller.searchProducts);
 
 // Wishlist
 router.post('/wishlist/toggle/:userId', controller.addToWishlist);

@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/foodSystemController");
 const upload = require("../utils/uploadMiddleware");
+const auth  = require("../utils/authMiddleware");
 
 router.post("/category", upload.single("image"), controller.createCategory);
 router.get("/category", controller.getAllCategories);
@@ -39,7 +40,7 @@ router.delete('/restaurant/:id',controller.deleteRestaurant);
 router.get('/top-nearby/:userId', controller.getTopRatedNearbyRestaurants); // ✅ Top-rated route
 
 // GET /api/restaurants/nearby/:userId - Get nearby restaurants
-router.get('/nearby/:userId', controller.getNearbyRestaurants);
+router.get('/nearby/:userId',controller.getNearbyRestaurants);
 
 
 module.exports = router;

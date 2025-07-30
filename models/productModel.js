@@ -14,8 +14,11 @@ const reviewSchema = new mongoose.Schema({
   },
   content: {
     type: String,
-  }
-}, { timestamps: true });
+  },
+  image:{
+    type:String
+  },
+});
 
 const productSchema = new mongoose.Schema({
   name: {
@@ -33,7 +36,7 @@ const productSchema = new mongoose.Schema({
     default: ''
   },
   image: {
-    type: String,
+    type: [String],
     default: ''
   },
   variation: {
@@ -64,8 +67,8 @@ const productSchema = new mongoose.Schema({
     }
   ],
   locationname: {
-    type: String,
-    required: [true, 'Location name is required']
+    type: [String],
+  
   },
   rating: {
     type: Number,
@@ -79,7 +82,6 @@ const productSchema = new mongoose.Schema({
   },
   contentname: {
     type: String,
-    required: [true, 'Content name is required']
   },
  deliverytime: {
   type: String,

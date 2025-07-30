@@ -512,3 +512,7 @@ exports.deleteByProduct = async (req, res) => {
     });
   }
 };
+
+
+
+//single resturant

@@ -19,7 +19,7 @@ const restaurantProductSchema = new mongoose.Schema({
     time: { type: String },
     distance: { type: String }
   },
-  type: [{ type: String, required: true }],
+  type: { type: [String], required: true },
   rating: { type: Number, default: 0 },
   viewCount: { type: Number, default: 0 },
   recommended: [recommendedSchema],

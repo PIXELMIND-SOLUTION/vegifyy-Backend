@@ -463,11 +463,10 @@ exports.deleteRestaurant = async (req, res) => {
           $geometry: {
             type: 'Point',
             coordinates: userCoordinates
-          },
-          $maxDistance: 5000 // meters = 5km
+          },          $maxDistance: 50000 // meters = 5km
         }
       },
-      rating: { $gte: 4 } // ✅ Fix applied here
+      rating: { $gte: 4} // ✅ Fix applied here
     });
 
     res.status(200).json({
@@ -496,42 +495,74 @@ exports.deleteRestaurant = async (req, res) => {
 
 
 exports.getNearbyRestaurants = async (req, res) => {
-  try {
+      try {
     const { userId } = req.params;
+    const { maxDistance = 50000 } = req.query; // Default 5km, can be overridden in query params
 
-    // ✅ Step 1: Fetch user
+    // 1. Get user's location
     const user = await User.findById(userId);
-    if (!user || !user.location || !Array.isArray(user.location.coordinates)) {
-      return res.status(404).json({ success: false, message: 'User or location not found' });
+    if (!user || !user.location) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found or location not set"
+      });
     }
 
-    const userCoordinates = user.location.coordinates;
-    console.log("User coordinates:", userCoordinates);
-
-    // ✅ Step 2: Fetch nearby restaurants within 5km
-    const nearbyRestaurants = await Restaurant.find({
+    // 2. Query nearby restaurants using geospatial index
+    const restaurants = await Restaurant.find({
       location: {
         $near: {
           $geometry: {
-            type: 'Point',
-            coordinates: userCoordinates
+            type: "Point",
+            coordinates: user.location.coordinates
           },
-          $maxDistance: 15000 // 5 km
+          $maxDistance: parseInt(maxDistance) // Distance in meters
         }
       }
+    }).select('-__v'); // Exclude version key
+
+    // 3. Calculate distances for each restaurant (optional)
+    const restaurantsWithDistance = restaurants.map(restaurant => {
+      const distance = getDistance(
+        user.location.coordinates,
+        restaurant.location.coordinates
+      );
+      return {
+        ...restaurant.toObject(),
+        distance: (distance / 1000).toFixed(2) + ' km' // Convert to km
+      };
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: nearbyRestaurants.length ? 'Nearby restaurants found' : 'No nearby restaurants found',
-      data: nearbyRestaurants
+      count: restaurants.length,
+      data: restaurantsWithDistance
     });
-  } catch (error) {
-    console.error('Error fetching nearby restaurants:', error);
-    return res.status(500).json({
+
+  } catch (err) {
+    res.status(500).json({
       success: false,
-      message: 'Server error',
-      error: error.message
+      message: "Server error",
+      error: err.message
     });
   }
 };
+
+// Helper function to calculate distance between two points (in meters)
+function getDistance(coord1, coord2) {
+  const [lon1, lat1] = coord1;
+  const [lon2, lat2] = coord2;
+  
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c; // Distance in meters
+}

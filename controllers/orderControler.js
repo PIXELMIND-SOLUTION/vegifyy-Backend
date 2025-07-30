@@ -1,118 +1,131 @@
 const Product = require("../models/productModel");
 const Order = require("../models/orderModel");
 const Restaurant = require('../models/restaurantModel');
-const User = require("../models/userModel"); // For delivery info
+const User = require("../models/userModel");
 const cloudinary = require('../config/cloudinary');
+const mongoose = require("mongoose");
 
-// Haversine formula to calculate distance in kilometers
 function calculateDistance(coord1, coord2) {
   const toRad = deg => deg * Math.PI / 180;
   const [lng1, lat1] = coord1;
   const [lng2, lat2] = coord2;
-
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
-
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in km
+  return R * c;
 }
 
 exports.createProduct = async (req, res) => {
   try {
-    let imageUrl = "";
-
-    // Upload image to Cloudinary if provided
-    if (req.file?.path) {
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: 'products'
-      });
-      imageUrl = result.secure_url;
-    }
-
     const { userId, restaurantId } = req.body;
+
+    // Step 1: Validate IDs
     if (!userId || !restaurantId) {
-      return res.status(400).json({
-        success: false,
-        message: "userId and restaurantId are required"
-      });
+      return res.status(400).json({ success: false, message: "userId and restaurantId are required" });
     }
 
-    // Get user & restaurant location data
     const user = await User.findById(userId);
     const restaurant = await Restaurant.findById(restaurantId);
 
     if (!user || !restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "User or Restaurant not found"
-      });
+      return res.status(404).json({ success: false, message: "User or Restaurant not found" });
     }
 
+    // Step 2: Calculate Delivery Time
     const userCoords = user.location?.coordinates;
     const restaurantCoords = restaurant.location?.coordinates;
-
     if (!userCoords || !restaurantCoords) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing coordinates for user or restaurant"
-      });
+      return res.status(400).json({ success: false, message: "Missing coordinates for user or restaurant" });
     }
 
-    // Calculate distance between user and restaurant
     const distance = calculateDistance(userCoords, restaurantCoords);
-
-    // Set delivery time based on distance
-    let deliverytime = '60 mins';
+    let deliverytime = '60+ mins';
     if (distance <= 2) deliverytime = '15 mins';
     else if (distance <= 5) deliverytime = '30 mins';
     else if (distance <= 10) deliverytime = '45 mins';
     else if (distance <= 20) deliverytime = '60 mins';
-    else deliverytime = '90+ mins';
 
-    // Parse addOns if it’s a JSON string
-    const productData = {
-      ...req.body,
-      image: imageUrl,
-      deliverytime
-    };
-
-    if (typeof productData.addOns === 'string') {
-      try {
-        productData.addOns = JSON.parse(productData.addOns);
-      } catch (err) {
-        return res.status(400).json({
-          success: false,
-          error: 'Add-ons must be a valid JSON array'
-        });
+    // Step 3: Upload product images
+    let imageUrls = [];
+    if (req.files?.productImages?.length) {
+      for (const file of req.files.productImages) {
+        const result = await cloudinary.uploader.upload(file.path, { folder: 'products' });
+        imageUrls.push(result.secure_url);
       }
     }
 
-    // Create product
-    const product = await Product.create(productData);
+    // Step 4: Parse addOns
+    let addOns = [];
+    if (req.body.addOns) {
+      try {
+        addOns = JSON.parse(req.body.addOns);
+        for (const addOn of addOns) {
+          if (!addOn.name || addOn.price == null) {
+            return res.status(400).json({ success: false, message: "Each add-on must have name and price" });
+          }
+        }
+      } catch {
+        return res.status(400).json({ success: false, message: "addOns must be valid JSON" });
+      }
+    }
 
-    res.status(201).json({
-      success: true,
-      message: 'Product created successfully',
-      data: product
+    // Step 5: Parse reviews & upload review images
+    let reviews = [];
+    if (req.body.reviews) {
+      try {
+        reviews = JSON.parse(req.body.reviews);
+      } catch {
+        return res.status(400).json({ success: false, message: "Invalid reviews format" });
+      }
+
+      const reviewImageFiles = req.files?.reviewImages || [];
+      for (let i = 0; i < reviews.length; i++) {
+        const file = reviewImageFiles[i];
+        if (file) {
+          const result = await cloudinary.uploader.upload(file.path, { folder: 'reviews' });
+          reviews[i].image = result.secure_url;
+        }
+      }
+    }
+
+    // Step 6: Validate required fields
+    const requiredFields = ['name', 'price', 'locationname', 'contentname'];
+    for (const field of requiredFields) {
+      if (!req.body[field]) {
+        return res.status(400).json({ success: false, message: `Missing required field: ${field}` });
+      }
+    }
+
+    // Step 7: Create product
+    const product = await Product.create({
+      name: req.body.name,
+      price: req.body.price,
+      description: req.body.description || '',
+      image: imageUrls,
+      variation: req.body.variation || 'Full',
+      userId: new mongoose.Types.ObjectId(userId), 
+      restaurantId:  new mongoose.Types.ObjectId(restaurantId), 
+      locationname: req.body.locationname,
+      contentname: req.body.contentname,
+      deliverytime,
+      addOns,
+      reviews,
+      viewcount: 0,
+      rating: 0
     });
 
+    res.status(201).json({ success: true, message: 'Product created successfully', data: product });
   } catch (err) {
     console.error(err);
     if (err.name === 'ValidationError') {
-      const errors = Object.values(err.errors).map(e => e.message);
-      return res.status(400).json({ success: false, error: errors });
+      const messages = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ success: false, error: messages });
     }
-
-    res.status(500).json({
-      success: false,
-      message: "Error creating product",
-      error: err.message
-    });
+    res.status(500).json({ success: false, message: "Error creating product", error: err.message });
   }
 };
 
@@ -120,153 +133,152 @@ exports.createProduct = async (req, res) => {
 // ✅ GET all products
 exports.getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
+    const products = await Product.find().populate('userId restaurantId');
     res.status(200).json({ success: true, data: products });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, message: "Failed to fetch products", error: err.message });
   }
 };
+
 
 // ✅ GET product by ID
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+    const product = await Product.findById(req.params.id).populate('userId restaurantId');
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
     res.status(200).json({ success: true, data: product });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, message: "Failed to fetch product", error: err.message });
   }
 };
 
 
-exports.updateProduct = async (req, res) => {
+exports.updateProductById = async (req, res) => {
   try {
-    const productId = req.params.id;
-    const existingProduct = await Product.findById(productId);
+    const { id } = req.params;
+    const { userId, restaurantId } = req.body;
 
-    if (!existingProduct) {
+    const product = await Product.findById(id);
+    if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    let imageUrl = existingProduct.image;
-
-    // Update image if provided
-    if (req.file?.path) {
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: 'products'
-      });
-      imageUrl = result.secure_url;
+    // Optional: Check userId/restaurantId if passed
+    if (userId && !await User.findById(userId)) {
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const { userId, restaurantId } = req.body;
+    if (restaurantId && !await Restaurant.findById(restaurantId)) {
+      return res.status(404).json({ success: false, message: "Restaurant not found" });
+    }
 
-    let deliverytime = existingProduct.deliverytime;
-
-    // If location data is being updated, recalculate delivery time
+    // Recalculate delivery time if user or restaurant ID changed
+    let deliverytime = product.deliverytime;
     if (userId && restaurantId) {
       const user = await User.findById(userId);
       const restaurant = await Restaurant.findById(restaurantId);
-
-      if (!user || !restaurant) {
-        return res.status(404).json({ success: false, message: "User or Restaurant not found" });
-      }
-
       const userCoords = user.location?.coordinates;
       const restaurantCoords = restaurant.location?.coordinates;
-
-      if (!userCoords || !restaurantCoords) {
-        return res.status(400).json({
-          success: false,
-          message: "Missing coordinates for user or restaurant"
-        });
+      if (userCoords && restaurantCoords) {
+        const distance = calculateDistance(userCoords, restaurantCoords);
+        deliverytime = '60+ mins';
+        if (distance <= 2) deliverytime = '15 mins';
+        else if (distance <= 5) deliverytime = '30 mins';
+        else if (distance <= 10) deliverytime = '45 mins';
+        else if (distance <= 20) deliverytime = '60 mins';
       }
-
-      const distance = calculateDistance(userCoords, restaurantCoords);
-
-      if (distance <= 2) deliverytime = '15 mins';
-      else if (distance <= 5) deliverytime = '30 mins';
-      else if (distance <= 10) deliverytime = '45 mins';
-      else if (distance <= 20) deliverytime = '60 mins';
-      else deliverytime = '90+ mins';
     }
 
-    const updatedData = {
-      ...req.body,
-      image: imageUrl,
-      deliverytime
-    };
+    // Upload new product images (if provided)
+    let imageUrls = product.image;
+    if (req.files?.productImages?.length) {
+      imageUrls = [];
+      for (const file of req.files.productImages) {
+        const result = await cloudinary.uploader.upload(file.path, { folder: 'products' });
+        imageUrls.push(result.secure_url);
+      }
+    }
 
-    // Parse addOns if needed
-    if (typeof updatedData.addOns === 'string') {
+    // Parse addOns
+    let addOns = product.addOns;
+    if (req.body.addOns) {
       try {
-        updatedData.addOns = JSON.parse(updatedData.addOns);
-      } catch (err) {
-        return res.status(400).json({
-          success: false,
-          error: 'Add-ons must be a valid JSON array'
-        });
+        addOns = JSON.parse(req.body.addOns);
+        for (const addOn of addOns) {
+          if (!addOn.name || addOn.price == null) {
+            return res.status(400).json({ success: false, message: "Each add-on must have name and price" });
+          }
+        }
+      } catch {
+        return res.status(400).json({ success: false, message: "addOns must be valid JSON" });
       }
     }
 
-    const updatedProduct = await Product.findByIdAndUpdate(productId, updatedData, {
-      new: true,
-      runValidators: true
-    });
+    // Parse reviews and review image uploads
+    let reviews = product.reviews;
+    if (req.body.reviews) {
+      try {
+        reviews = JSON.parse(req.body.reviews);
+      } catch {
+        return res.status(400).json({ success: false, message: "Invalid reviews format" });
+      }
 
-    res.status(200).json({
-      success: true,
-      message: "Product updated successfully",
-      data: updatedProduct
-    });
+      const reviewImageFiles = req.files?.reviewImages || [];
+      for (let i = 0; i < reviews.length; i++) {
+        const file = reviewImageFiles[i];
+        if (file) {
+          const result = await cloudinary.uploader.upload(file.path, { folder: 'reviews' });
+          reviews[i].image = result.secure_url;
+        }
+      }
+    }
 
+    // Update product fields
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      {
+        name: req.body.name || product.name,
+        price: req.body.price || product.price,
+        description: req.body.description ?? product.description,
+        image: imageUrls,
+        variation: req.body.variation || product.variation,
+        userId: userId ? new mongoose.Types.ObjectId(userId) : product.userId,
+        restaurantId: restaurantId ? new mongoose.Types.ObjectId(restaurantId) : product.restaurantId,
+        locationname: req.body.locationname || product.locationname,
+        contentname: req.body.contentname || product.contentname,
+        deliverytime,
+        addOns,
+        reviews,
+      },
+      { new: true }
+    );
+
+    res.status(200).json({ success: true, message: "Product updated successfully", data: updatedProduct });
   } catch (err) {
     console.error(err);
     if (err.name === 'ValidationError') {
-      const errors = Object.values(err.errors).map(e => e.message);
-      return res.status(400).json({ success: false, error: errors });
+      const messages = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ success: false, error: messages });
     }
-
-    res.status(500).json({
-      success: false,
-      message: "Error updating product",
-      error: err.message
-    });
+    res.status(500).json({ success: false, message: "Error updating product", error: err.message });
   }
 };
 // ✅ DELETE product
-exports.deleteProduct = async (req, res) => {
+exports.deleteProductById = async (req, res) => {
   try {
-    const deleted = await Product.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ success: false, message: "Product not found" });
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
     res.status(200).json({ success: true, message: "Product deleted" });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, message: "Failed to delete product", error: err.message });
   }
 };
 
-// ✅ Get Products by Category
-exports.getProductsByCategory = async (req, res) => {
-  try {
-    const { category } = req.params;
-    const products = await Product.find({ category });
-    res.status(200).json({ success: true, data: products });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
 
-// ✅ Search Products (by productName)
-exports.searchProducts = async (req, res) => {
-  try {
-    const { q } = req.query;
-    if (!q) return res.status(400).json({ success: false, message: "Query is required" });
-
-    const products = await Product.find({ productName: { $regex: q, $options: 'i' } });
-    res.status(200).json({ success: true, data: products });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
 // 1. Toggle Wishlist (Add/Remove)
 exports.addToWishlist = async (req, res) => {
   const { userId } = req.params;

@@ -7,7 +7,7 @@ const authRoutes=require('./routes/authroutes');
 const addressRoutes = require('./routes/addressRoute');
 const routes = require("./routes/foodSystemRoute");
 const restaurantProduc = require("./routes/restaurantProductRoute");
-
+const categorieRestaurantProduct = require('./routes/categorieRestaurantProductRoutes');
 
 
 
@@ -37,8 +37,8 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/api',addressRoutes);
 app.use('/api',authRoutes);
 app.use('/api',routes);
-app.use('/api',restaurantProduc)
-
+app.use('/api',restaurantProduc);
+app.use('/api',categorieRestaurantProduct);
 
 // Socket.IO connection
 io.on('connection', (socket) => {
