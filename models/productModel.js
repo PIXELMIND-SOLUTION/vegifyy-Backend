@@ -15,8 +15,8 @@ const reviewSchema = new mongoose.Schema({
   content: {
     type: String,
   },
-  image:{
-    type:String
+  image: {
+    type: String
   },
 });
 
@@ -39,36 +39,38 @@ const productSchema = new mongoose.Schema({
     type: [String],
     default: ''
   },
-  variation: {
-    type: String,
-    enum: {
-      values: ['Half', 'Full'],
-      message: 'Variation can only be Half or Full'
+  vendorHalfPercentage: { type: Number },
+  vendor_Platecost: { type: Number },
+  addons: {
+    productName: { type: String },
+    variation: {
+      name: { type: String },
+      type: {
+        type: String,
+        enum: ["Full", "Half"],
+      },
+      vendorPercentage: { type: Number }, // Only used if type is 'Half'
+      price: { type: Number } // Final price, computed during controller logic
     },
-    
-    default: 'Full'
+    plates: {
+      name: { type: String },
+      item: { type: Number },
+      platePrice: { type: Number },
+      totalPlatesPrice: { type: Number }
+    },
+    addonImage: {
+      public_id: { type: String },
+      url: { type: String }
+    }
   },
   userId: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'User',
-  required: true
-},
-  addOns: [
-    {
-      name: {
-        type: String,
-        required: [true, 'Add-on name is required']
-      },
-      price: {
-        type: Number,
-        required: [true, 'Add-on price is required'],
-        min: [0, 'Price of add-on must be non-negative']
-      }
-    }
-  ],
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+
   locationname: {
     type: [String],
-  
+
   },
   rating: {
     type: Number,
@@ -83,16 +85,15 @@ const productSchema = new mongoose.Schema({
   contentname: {
     type: String,
   },
- deliverytime: {
-  type: String,
-  required: [true, 'Delivery time is required'] // remove enum
-},
+  deliverytime: {
+    type: String,
+  },
   reviews: [reviewSchema],
 
   // Restaurant Reference
-  restaurantId: {
+  RestaurantProductId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Restaurant',
+    ref: 'RestaurantProduct',
   },
 }, {
   timestamps: true

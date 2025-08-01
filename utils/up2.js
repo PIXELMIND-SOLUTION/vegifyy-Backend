@@ -1,27 +1,33 @@
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");
 
-// Create the uploads folder if it doesn't exist
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
-}
-
-// Configure storage for Multer
+// Storage - temporary, since we upload to Cloudinary
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/");
+    cb(null, "uploads/"); // Make sure this folder exists
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
+    cb(null, `${Date.now()}-${file.originalname}`);
+  },
 });
 
-// Define accepted fields
-const upload = multer({ storage }).fields([
-  { name: "productImages", maxCount: 5 },
-  { name: "reviewImages", maxCount: 5 }
-]);
+// File filter (optional)
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|webp/;
+  const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mime = allowedTypes.test(file.mimetype);
+  if (ext && mime) cb(null, true);
+  else cb(new Error("Only images are allowed"));
+};
 
-module.exports = upload;
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB max
+});
+
+module.exports = upload.fields([
+  { name: "productImages", maxCount: 5 },
+  { name: "reviewImages", maxCount: 5 },
+  { name: "addonImage", maxCount: 1 }
+]);

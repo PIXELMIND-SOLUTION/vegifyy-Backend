@@ -1,19 +1,13 @@
-// utils/multer.js
-const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const multer = require("multer");
 
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'restaurant-products',
-    allowedFormats: ['jpg', 'png', 'jpeg']
-  }
-});
 
-const uploads = multer({ 
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
-});
+const upload = require("./multer"); // This is your existing multer config
 
-module.exports = uploads;
+// Middleware to handle multiple field uploads
+const productImageUploader = upload.fields([
+  { name: "productImage", maxCount: 1 },
+  { name: "recommendedImages", maxCount: 10 },
+  { name: "addonImage", maxCount: 1 }
+]);
+
+module.exports = productImageUploader;
