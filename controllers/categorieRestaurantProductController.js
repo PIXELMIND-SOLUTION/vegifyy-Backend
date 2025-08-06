@@ -1,49 +1,77 @@
 const CategorieRestaurantProduct = require("../models/categorieRestaurantModel");
+const Restaurant = require("../models/restaurantModel");
+const { Category } = require("../models/foodSystemModel");
 const cloudinary = require("../config/cloudinary");
+const fs = require("fs");
 
-// ✅ Create Product
-exports.createCategorieProduct = async (req, res) => {
+// ➕ CREATE
+exports.createCategorieRestaurantProduct = async (req, res) => {
   try {
-    let imageUrl = null;
+    const { restaurant, rating, content, categorie } = req.body;
 
+    if (!restaurant || !categorie) {
+      return res.status(400).json({ success: false, message: 'Required fields missing' });
+    }
+
+    // 📌 Find the restaurant
+    const restaurantDoc = await Restaurant.findById(restaurant);
+    if (!restaurantDoc) {
+      return res.status(404).json({ success: false, message: 'Restaurant not found' });
+    }
+
+    // ⬇️ Extract locationName from the restaurant document
+    const locationName = restaurantDoc.locationName || [];
+
+    let imageUrl = '';
     if (req.file) {
       const result = await cloudinary.uploader.upload(req.file.path);
       imageUrl = result.secure_url;
     }
 
-    const { name, rating, content, locationName, categorie } = req.body;
-
-    const newProduct = new CategorieRestaurantProduct({
-      name,
-      image: imageUrl,
+    // 🔥 Create the product
+    const newProduct = await CategorieRestaurantProduct.create({
+      restaurant,
+      categorie,
       rating,
       content,
-      locationName: locationName ? locationName.split(",") : [],
-      categorie,
+      locationName,
+      image: imageUrl,
     });
 
-    await newProduct.save();
-    res.status(201).json({ success: true, message: "Product created successfully", data: newProduct });
+    // 🔁 Populate restaurant and categorie names
+    const populatedProduct = await CategorieRestaurantProduct.findById(newProduct._id)
+      .populate('restaurant', 'restaurantName locationName') // ✅ Include locationName here too
+      .populate('categorie', 'categoryName');
+
+    res.status(201).json({ success: true, data: populatedProduct });
   } catch (err) {
+    console.error("Error creating:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
-// ✅ Get All Products
-exports.getAllCategorieProducts = async (req, res) => {
+// 📥 GET ALL
+exports.getAllCategorieRestaurantProducts = async (req, res) => {
   try {
-    const products = await CategorieRestaurantProduct.find();
+    const products = await CategorieRestaurantProduct.find()
+      .populate('restaurant', 'restaurantName locationName')
+      .populate('categorie', 'categoryName');
+
     res.status(200).json({ success: true, data: products });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// ✅ Get Product by ID
-exports.getCategorieProductById = async (req, res) => {
+// 📥 GET BY ID
+exports.getCategorieRestaurantProductById = async (req, res) => {
   try {
-    const product = await CategorieRestaurantProduct.findById(req.params.id);
-    if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+    const product = await CategorieRestaurantProduct.findById(req.params.id)
+      .populate('restaurant', 'restaurantName locationName')
+      .populate('categorie', 'categoryName');
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Not found" });
+    }
 
     res.status(200).json({ success: true, data: product });
   } catch (err) {
@@ -51,58 +79,73 @@ exports.getCategorieProductById = async (req, res) => {
   }
 };
 
-// ✅ Update Product
-exports.updateCategorieProduct = async (req, res) => {
+// ✏️ UPDATE
+exports.updateCategorieRestaurantProduct = async (req, res) => {
   try {
-    const { name, rating, content, locationName, categorie } = req.body;
+    const { restaurant, rating, content, categorie } = req.body;
 
-    let updateData = {
-      name,
-      rating,
-      content,
-      categorie,
-    };
-
-    if (locationName) {
-      updateData.locationName = locationName.split(",");
+    const product = await CategorieRestaurantProduct.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
+    // Optional: Fetch new locationName if restaurant is changed
+    let locationName = product.locationName;
+    if (restaurant && restaurant !== product.restaurant.toString()) {
+      const restaurantDoc = await Restaurant.findById(restaurant);
+      if (!restaurantDoc) return res.status(404).json({ success: false, message: "Restaurant not found" });
+      locationName = restaurantDoc.locationName || [];
+    }
+
+    // Handle image update
+    let imageUrl = product.image;
     if (req.file) {
       const result = await cloudinary.uploader.upload(req.file.path);
-      updateData.image = result.secure_url;
+      imageUrl = result.secure_url;
     }
 
-    const updatedProduct = await CategorieRestaurantProduct.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    );
+    product.restaurant = restaurant || product.restaurant;
+    product.rating = rating ?? product.rating;
+    product.content = content || product.content;
+    product.categorie = categorie || product.categorie;
+    product.locationName = locationName;
+    product.image = imageUrl;
 
-    if (!updatedProduct) return res.status(404).json({ success: false, message: "Product not found" });
+    await product.save();
 
-    res.status(200).json({ success: true, message: "Product updated", data: updatedProduct });
+    const updated = await CategorieRestaurantProduct.findById(product._id)
+      .populate('restaurant', 'restaurantName locationName')
+      .populate('categorie', 'categoryName');
+
+    res.status(200).json({ success: true, data: updated });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// ✅ Delete Product
-exports.deleteCategorieProduct = async (req, res) => {
+// ❌ DELETE
+exports.deleteCategorieRestaurantProduct = async (req, res) => {
   try {
-    const deleted = await CategorieRestaurantProduct.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ success: false, message: "Product not found" });
+    const product = await CategorieRestaurantProduct.findByIdAndDelete(req.params.id);
 
-    res.status(200).json({ success: true, message: "Product deleted successfully" });
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Not found" });
+    }
+
+    res.status(200).json({ success: true, message: "Deleted successfully" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// ✅ Get Products by Categorie ID
-exports.getCategorieProductsByCategorieId = async (req, res) => {
+// 📦 GET BY CATEGORIE ID
+exports.getByCategorieId = async (req, res) => {
   try {
     const { categorieId } = req.params;
-    const products = await CategorieRestaurantProduct.find({ categorie: categorieId });
+
+    const products = await CategorieRestaurantProduct.find({ categorie: categorieId })
+      .populate('restaurant', 'restaurantName locationName')
+      .populate('categorie', 'categoryName');
 
     res.status(200).json({ success: true, data: products });
   } catch (err) {

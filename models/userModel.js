@@ -8,9 +8,8 @@ const userSchema = new mongoose.Schema({
   otp: { type: String },
   isVerified: { type: Boolean, default: false },
   password: { type: String },
-  referralCode: { type: String, unique: true },
-  referredBy: { type: String, default: null },
-  coins: { type: Number, default: 0 },
+
+  
   address: {
     addressLine1: { type: String },
     addressLine2: { type: String },

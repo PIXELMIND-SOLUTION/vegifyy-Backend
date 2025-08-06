@@ -3,11 +3,11 @@ const router = express.Router();
 const upload = require('../utils/multer');
 const controller = require("../controllers/categorieRestaurantProductController");
 
-router.post("/categorieProduct", upload.single("image"), controller.createCategorieProduct);
-router.get("/categorieProducts", controller.getAllCategorieProducts);
-router.get("/categorieProduct/:id", controller.getCategorieProductById);
-router.put("/categorieProduct/:id", upload.single("image"), controller.updateCategorieProduct);
-router.delete("/categorieProduct/:id", controller.deleteCategorieProduct);
-router.get("/bycategorie/:categorieId", controller.getCategorieProductsByCategorieId);
+router.post("/categorieProduct", upload.single("image"), controller.createCategorieRestaurantProduct);
+router.get("/categorieProducts", controller.getAllCategorieRestaurantProducts);
+router.get("/categorieProduct/:id", controller.getCategorieRestaurantProductById);
+router.put("/categorieProduct/:id", upload.single("image"), controller.updateCategorieRestaurantProduct);
+router.delete("/categorieProduct/:id", controller.deleteCategorieRestaurantProduct);
+router.get("/bycategorie/:categorieId", controller.getByCategorieId  );
 
 module.exports = router;

@@ -1,14 +1,19 @@
 const mongoose = require("mongoose");
 
 const categorieRestaurantProductSchema = new mongoose.Schema({
-  name: { type: String, required: true },
+  restaurant: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Restaurant", // Reference to the Restaurant model
+    required: true,
+  },
   image: { type: String }, // Cloudinary image URL
   rating: { type: Number, default: 0 },
   content: { type: String },
-  locationName: { type: [String] }, // Array of location strings
+
   categorie: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Category", // Reference to the Categorie model
+    ref: "Category", // Reference to the Category model
+    required: true,
   },
 }, { timestamps: true });
 
