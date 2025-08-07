@@ -11,14 +11,14 @@ router.post(
    uploads,controller.createRestaurantProduct
 );
 router.get("/restaurant-products", controller.getAllRestaurantProducts);
-router.get("/restaurant-products/:productId", controller.getProductById);
-router.get("/restaurant-product/:restaurantId", controller.getRestaurantProductsByRestaurantId);
+router.get("/restaurant-products/:productId", controller.getAllRestaurantProducts);
+router.get("/restaurant-product/:restaurantId", controller.getRestaurantProductById);
+router.get("/restaurant-product/:categoryId", controller.getRestaurantProductsByCategoryId);
 
-router.put("/restaurant-product/:restaurantId",uploads, controller.updateRestaurantProductById);
+router.put("/restaurant-product/:id",uploads, controller.updateRestaurantProductById);
 
 
-router.delete("/restaurant-product/:productId", controller.deleteProductById);
-router.delete("/restaurant-products/:restaurantId", controller.deleteRestaurantProductById);
+router.delete("/restaurant-product/:id", controller.deleteRestaurantProductById);
 
 
 module.exports = router;

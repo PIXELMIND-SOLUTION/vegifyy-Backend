@@ -7,7 +7,6 @@ const categorieRestaurantProductSchema = new mongoose.Schema({
     required: true,
   },
   image: { type: String }, // Cloudinary image URL
-  rating: { type: Number, default: 0 },
   content: { type: String },
 
   categorie: {

@@ -5,76 +5,82 @@ const User = require("../models/userModel");
 const cloudinary = require('../config/cloudinary');
 const mongoose = require("mongoose");
 const fs = require("fs");
-// 🌍 Haversine formula to calculate distance
+
+
+
+// Haversine formula for distance
 const calculateDistance = (coord1, coord2) => {
   const toRad = (deg) => (deg * Math.PI) / 180;
   const [lng1, lat1] = coord1;
   const [lng2, lat2] = coord2;
-  const R = 6371; // Radius of earth in km
-
+  const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lng2 - lng1);
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
 
 exports.createProduct = async (req, res) => {
   try {
-    const {
-      name,
-      price,
+    let {
       description,
       locationname,
       contentname,
       userId,
       RestaurantProductId,
       reviews,
-      vendorHalfPercentage,
-      platePrice,
       addons,
-      vendor_Platecost,
       type,
+      rating,
+      viewcount,
     } = req.body;
 
-    // 1. Validate user and restaurant
+    const vendorHalfPercentage = 50;
+    const vendor_Platecost = 5;
+
     const user = await User.findById(userId);
-    const restaurantProduct = await RestaurantProduct.findById(RestaurantProductId);
+    const restaurantProduct = await RestaurantProduct.findById(RestaurantProductId).populate("restaurantId");
+
     if (!user || !restaurantProduct) {
-      return res.status(400).json({ success: false, message: "User or Restaurant not found" });
+      return res.status(400).json({
+        success: false,
+        message: "User or RestaurantProduct not found"
+      });
     }
 
-    // 2. Handle product images
+    // ✅ Get product name & price from recommended array
+    const recommendedItem = restaurantProduct.recommended?.[0];
+    const productName = recommendedItem?.name?.trim() || "Unnamed Product";
+    const productPrice = Number(recommendedItem?.price) || 0; // ✅ Corrected line
+    const price = productPrice;
+
+    console.log("👉 Extracted productName:", productName);
+    console.log("👉 Extracted productPrice from recommended:", productPrice);
+
+    // ✅ Upload product images
     let productImages = [];
     if (req.files?.productImages) {
-      const images = Array.isArray(req.files.productImages)
-        ? req.files.productImages
-        : [req.files.productImages];
+      const images = Array.isArray(req.files.productImages) ? req.files.productImages : [req.files.productImages];
       for (const file of images) {
         const result = await cloudinary.uploader.upload(file.path);
         productImages.push(result.secure_url);
-        fs.unlinkSync(file.path);
       }
     }
 
-    // 3. Handle review images
+    // ✅ Upload review images
     let reviewImages = [];
     if (req.files?.reviewImages) {
-      const images = Array.isArray(req.files.reviewImages)
-        ? req.files.reviewImages
-        : [req.files.reviewImages];
+      const images = Array.isArray(req.files.reviewImages) ? req.files.reviewImages : [req.files.reviewImages];
       for (const file of images) {
         const result = await cloudinary.uploader.upload(file.path);
         reviewImages.push(result.secure_url);
-        fs.unlinkSync(file.path);
       }
     }
 
-    // 4. Parse and attach reviews
+    // ✅ Parse reviews
     let parsedReviews = [];
     if (reviews) {
       parsedReviews = JSON.parse(reviews);
@@ -83,91 +89,130 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    // 5. Handle addon image
+    // ✅ Upload addon image
     let addonImageCloud = { public_id: "", url: "" };
     if (req.files?.addonImage) {
-      const file = Array.isArray(req.files.addonImage)
-        ? req.files.addonImage[0]
-        : req.files.addonImage;
+      const file = Array.isArray(req.files.addonImage) ? req.files.addonImage[0] : req.files.addonImage;
       const result = await cloudinary.uploader.upload(file.path);
-      addonImageCloud = { public_id: result.public_id, url: result.secure_url };
-      fs.unlinkSync(file.path);
+      addonImageCloud = {
+        public_id: result.public_id,
+        url: result.secure_url,
+      };
     }
 
-    // 6. Parse addons
+    // ✅ Parse and construct addons
     let parsedAddons = {};
     if (addons) {
       const parsed = JSON.parse(addons);
+      const plateItemCount = Number(parsed.plates?.item) || 0;
+      const totalPlatesPrice = plateItemCount * vendor_Platecost;
+
+      let variationPrice = 0;
+      const variationType = parsed.variation?.type?.toLowerCase();
+
+      if (variationType === "full") {
+        variationPrice = productPrice;
+      } else if (variationType === "half") {
+        variationPrice = productPrice - (productPrice * vendorHalfPercentage / 100);
+      }
+
       parsedAddons = {
-        productName: parsed.name || "",
+        productName: productName,
         variation: {
           name: parsed.variation?.name || "",
           type: parsed.variation?.type || "",
-          vendorPercentage: parsed.variation?.vendorPercentage || 0,
-          price: parsed.variation?.price || 0,
+          vendorPercentage: vendorHalfPercentage,
+          price: variationPrice,
         },
         plates: {
           name: parsed.plates?.name || "",
-          item: parsed.plates?.item || 0,
-          platePrice: parsed.plates?.platePrice || 0,
-          totalPlatesPrice:
-            (parsed.plates?.item || 0) * (parsed.plates?.platePrice || 0),
+          item: plateItemCount,
+          platePrice: vendor_Platecost,
+          totalPlatesPrice: totalPlatesPrice,
         },
         addonImage: addonImageCloud,
       };
     }
 
-    // 7. Parse location and type
+    // ✅ Calculate delivery time based on user ↔ restaurant distance
+    let deliveryTime = null;
+    const restaurantCoordinates = restaurantProduct?.restaurantId?.location?.coordinates;
+    const userCoordinates = user?.location?.coordinates;
+
+    if (restaurantCoordinates && userCoordinates) {
+      const dist = calculateDistance(restaurantCoordinates, userCoordinates);
+      const estimatedTime = Math.round(dist * 2); // 2 min per km
+      deliveryTime = estimatedTime > 60 ? "60+ mins" : `${estimatedTime} mins`;
+    }
+
     const parsedLocation = JSON.parse(locationname || "[]");
     const parsedType = JSON.parse(type || "[]");
 
-    // 8. Calculate vendorHalfPrice (internal only)
-    const vendorHalfPrice = (Number(price) * Number(vendorHalfPercentage || 0)) / 100;
-
-    // 9. Estimate delivery time
-    let deliveryTime = null;
-    if (user?.location?.coordinates && restaurantProduct?.location?.coordinates) {
-      const dist = calculateDistance(
-        restaurantProduct.location.coordinates,
-        user.location.coordinates
-      );
-      deliveryTime = `${Math.round(dist * 2)} mins`; // ~2 mins/km
-    }
-
-    // 10. Create Product in DB
+    // ✅ Save Product
     const product = await Product.create({
-      name,
-      price,
+      productName: productName,
+      productPrice: productPrice,
       description,
       image: productImages,
       locationname: parsedLocation,
       contentname,
       userId,
-      RestaurantProductId,
       reviews: parsedReviews,
-      vendorHalfPercentage, // saved in DB but not shown in response
-      vendor_Platecost,     // saved in DB but not shown in response
-      platePrice,
-      rating: 0,
-      viewcount: 0,
+      vendorHalfPercentage,
+      vendor_Platecost,
+      rating: Number(rating) || 0,
+      viewcount: Number(viewcount) || 0,
       type: parsedType,
       addons: parsedAddons,
       deliverytime: deliveryTime,
+      restaurantProduct: {
+        product: restaurantProduct._id,
+        productName: productName,
+        quantity: 1,
+        price: price,
+      },
     });
 
-    // 11. Remove sensitive fields from response
     const productObj = product.toObject();
     delete productObj.vendorHalfPercentage;
     delete productObj.vendor_Platecost;
 
-    // 12. Send success response
     return res.status(201).json({
       success: true,
       message: "Product created successfully",
       data: productObj,
     });
+
   } catch (err) {
-    console.error(err);
+    console.error("❌ Product creation error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};
+// ✅ GET all products
+exports.getAllProducts = async (req, res) => {
+   try {
+    const products = await Product.find()
+      .populate("userId", "firstName lastName phoneNumber")
+      .populate("restaurantProduct.product");
+
+    const sanitizedProducts = products.map(product => {
+      const productObj = product.toObject();
+      delete productObj.vendorHalfPercentage;
+      delete productObj.vendor_Platecost;
+      return productObj;
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "All products fetched successfully",
+      data: sanitizedProducts,
+    });
+  } catch (err) {
+    console.error("❌ Get all products error:", err);
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -176,151 +221,239 @@ exports.createProduct = async (req, res) => {
   }
 };
 
-// ✅ GET all products
-exports.getAllProducts = async (req, res) => {
-  try {
-    const products = await Product.find().populate('userId restaurantId');
-    res.status(200).json({ success: true, data: products });
-  } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to fetch products", error: err.message });
-  }
-};
-
 
 // ✅ GET product by ID
 exports.getProductById = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id).populate('userId restaurantId');
+   try {
+    const { id } = req.params;
+
+    const product = await Product.findById(id)
+      .populate("userId", "firstName lastName phoneNumber")
+      .populate("restaurantProduct.product");
+
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
     }
-    res.status(200).json({ success: true, data: product });
+
+    const productObj = product.toObject();
+    delete productObj.vendorHalfPercentage;
+    delete productObj.vendor_Platecost;
+
+    return res.status(200).json({
+      success: true,
+      message: "Product fetched successfully",
+      data: productObj,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to fetch product", error: err.message });
+    console.error("❌ Get product by ID error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 
 
 exports.updateProductById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { userId, restaurantId } = req.body;
+   try {
+    const productId = req.params.id;
 
-    const product = await Product.findById(id);
-    if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+    let {
+      description,
+      locationname,
+      contentname,
+      userId,
+      RestaurantProductId,
+      reviews,
+      addons,
+      type,
+      rating,
+      viewcount,
+    } = req.body;
+
+    const vendorHalfPercentage = 50;
+    const vendor_Platecost = 5;
+
+    const user = await User.findById(userId);
+    const restaurantProduct = await RestaurantProduct.findById(RestaurantProductId).populate("restaurantId");
+
+    if (!user || !restaurantProduct) {
+      return res.status(400).json({
+        success: false,
+        message: "User or RestaurantProduct not found"
+      });
     }
 
-    // Optional: Check userId/restaurantId if passed
-    if (userId && !await User.findById(userId)) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
+    // Get recommended item name and price
+    const recommendedItem = restaurantProduct.recommended?.[0];
+    const productName = recommendedItem?.name?.trim() || "Unnamed Product";
+    const productPrice = Number(recommendedItem?.price) || 0;
+    const price = productPrice;
 
-    if (restaurantId && !await Restaurant.findById(restaurantId)) {
-      return res.status(404).json({ success: false, message: "Restaurant not found" });
-    }
-
-    // Recalculate delivery time if user or restaurant ID changed
-    let deliverytime = product.deliverytime;
-    if (userId && restaurantId) {
-      const user = await User.findById(userId);
-      const restaurant = await Restaurant.findById(restaurantId);
-      const userCoords = user.location?.coordinates;
-      const restaurantCoords = restaurant.location?.coordinates;
-      if (userCoords && restaurantCoords) {
-        const distance = calculateDistance(userCoords, restaurantCoords);
-        deliverytime = '60+ mins';
-        if (distance <= 2) deliverytime = '15 mins';
-        else if (distance <= 5) deliverytime = '30 mins';
-        else if (distance <= 10) deliverytime = '45 mins';
-        else if (distance <= 20) deliverytime = '60 mins';
+    // Upload product images
+    let productImages = [];
+    if (req.files?.productImages) {
+      const images = Array.isArray(req.files.productImages) ? req.files.productImages : [req.files.productImages];
+      for (const file of images) {
+        const result = await cloudinary.uploader.upload(file.path);
+        productImages.push(result.secure_url);
       }
     }
 
-    // Upload new product images (if provided)
-    let imageUrls = product.image;
-    if (req.files?.productImages?.length) {
-      imageUrls = [];
-      for (const file of req.files.productImages) {
-        const result = await cloudinary.uploader.upload(file.path, { folder: 'products' });
-        imageUrls.push(result.secure_url);
+    // Upload review images
+    let reviewImages = [];
+    if (req.files?.reviewImages) {
+      const images = Array.isArray(req.files.reviewImages) ? req.files.reviewImages : [req.files.reviewImages];
+      for (const file of images) {
+        const result = await cloudinary.uploader.upload(file.path);
+        reviewImages.push(result.secure_url);
       }
     }
 
-    // Parse addOns
-    let addOns = product.addOns;
-    if (req.body.addOns) {
-      try {
-        addOns = JSON.parse(req.body.addOns);
-        for (const addOn of addOns) {
-          if (!addOn.name || addOn.price == null) {
-            return res.status(400).json({ success: false, message: "Each add-on must have name and price" });
-          }
-        }
-      } catch {
-        return res.status(400).json({ success: false, message: "addOns must be valid JSON" });
-      }
+    // Parse reviews
+    let parsedReviews = [];
+    if (reviews) {
+      parsedReviews = JSON.parse(reviews);
+      parsedReviews.forEach((rev, i) => {
+        if (reviewImages[i]) rev.image = reviewImages[i];
+      });
     }
 
-    // Parse reviews and review image uploads
-    let reviews = product.reviews;
-    if (req.body.reviews) {
-      try {
-        reviews = JSON.parse(req.body.reviews);
-      } catch {
-        return res.status(400).json({ success: false, message: "Invalid reviews format" });
-      }
-
-      const reviewImageFiles = req.files?.reviewImages || [];
-      for (let i = 0; i < reviews.length; i++) {
-        const file = reviewImageFiles[i];
-        if (file) {
-          const result = await cloudinary.uploader.upload(file.path, { folder: 'reviews' });
-          reviews[i].image = result.secure_url;
-        }
-      }
+    // Upload addon image
+    let addonImageCloud = { public_id: "", url: "" };
+    if (req.files?.addonImage) {
+      const file = Array.isArray(req.files.addonImage) ? req.files.addonImage[0] : req.files.addonImage;
+      const result = await cloudinary.uploader.upload(file.path);
+      addonImageCloud = {
+        public_id: result.public_id,
+        url: result.secure_url,
+      };
     }
 
-    // Update product fields
-    const updatedProduct = await Product.findByIdAndUpdate(
-      id,
-      {
-        name: req.body.name || product.name,
-        price: req.body.price || product.price,
-        description: req.body.description ?? product.description,
-        image: imageUrls,
-        variation: req.body.variation || product.variation,
-        userId: userId ? new mongoose.Types.ObjectId(userId) : product.userId,
-        restaurantId: restaurantId ? new mongoose.Types.ObjectId(restaurantId) : product.restaurantId,
-        locationname: req.body.locationname || product.locationname,
-        contentname: req.body.contentname || product.contentname,
-        deliverytime,
-        addOns,
-        reviews,
+    // Parse and construct addons
+    let parsedAddons = {};
+    if (addons) {
+      const parsed = JSON.parse(addons);
+      const plateItemCount = Number(parsed.plates?.item) || 0;
+      const totalPlatesPrice = plateItemCount * vendor_Platecost;
+
+      let variationPrice = 0;
+      const variationType = parsed.variation?.type?.toLowerCase();
+
+      if (variationType === "full") {
+        variationPrice = productPrice;
+      } else if (variationType === "half") {
+        variationPrice = productPrice - (productPrice * vendorHalfPercentage / 100);
+      }
+
+      parsedAddons = {
+        productName: productName,
+        variation: {
+          name: parsed.variation?.name || "",
+          type: parsed.variation?.type || "",
+          vendorPercentage: vendorHalfPercentage,
+          price: variationPrice,
+        },
+        plates: {
+          name: parsed.plates?.name || "",
+          item: plateItemCount,
+          platePrice: vendor_Platecost,
+          totalPlatesPrice: totalPlatesPrice,
+        },
+        addonImage: addonImageCloud,
+      };
+    }
+
+    // Calculate delivery time
+    let deliveryTime = null;
+    const restaurantCoordinates = restaurantProduct?.restaurantId?.location?.coordinates;
+    const userCoordinates = user?.location?.coordinates;
+
+    if (restaurantCoordinates && userCoordinates) {
+      const dist = calculateDistance(restaurantCoordinates, userCoordinates);
+      const estimatedTime = Math.round(dist * 2); // 2 min per km
+      deliveryTime = estimatedTime > 60 ? "60+ mins" : `${estimatedTime} mins`;
+    }
+
+    const parsedLocation = JSON.parse(locationname || "[]");
+    const parsedType = JSON.parse(type || "[]");
+
+    // Update product
+    const updatedProduct = await Product.findByIdAndUpdate(productId, {
+      productName: productName,
+      productPrice: productPrice,
+      description,
+      image: productImages,
+      locationname: parsedLocation,
+      contentname,
+      userId,
+      reviews: parsedReviews,
+      vendorHalfPercentage,
+      vendor_Platecost,
+      rating: Number(rating) || 0,
+      viewcount: Number(viewcount) || 0,
+      type: parsedType,
+      addons: parsedAddons,
+      deliverytime: deliveryTime,
+      restaurantProduct: {
+        product: restaurantProduct._id,
+        productName: productName,
+        quantity: 1,
+        price: price,
       },
-      { new: true }
-    );
+    }, { new: true });
 
-    res.status(200).json({ success: true, message: "Product updated successfully", data: updatedProduct });
+    const productObj = updatedProduct.toObject();
+    delete productObj.vendorHalfPercentage;
+    delete productObj.vendor_Platecost;
+
+    return res.status(200).json({
+      success: true,
+      message: "Product updated successfully",
+      data: productObj,
+    });
+
   } catch (err) {
-    console.error(err);
-    if (err.name === 'ValidationError') {
-      const messages = Object.values(err.errors).map(e => e.message);
-      return res.status(400).json({ success: false, error: messages });
-    }
-    res.status(500).json({ success: false, message: "Error updating product", error: err.message });
+    console.error("❌ Product update error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 // ✅ DELETE product
 exports.deleteProductById = async (req, res) => {
-  try {
-    const product = await Product.findByIdAndDelete(req.params.id);
+ try {
+    const productId = req.params.id;
+
+    const product = await Product.findById(productId);
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
     }
-    res.status(200).json({ success: true, message: "Product deleted" });
+
+    // Optional: delete images from Cloudinary here if needed
+
+    await Product.findByIdAndDelete(productId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Product deleted successfully",
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to delete product", error: err.message });
+    console.error("❌ Product deletion error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 

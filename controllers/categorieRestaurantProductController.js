@@ -1,54 +1,68 @@
 const CategorieRestaurantProduct = require("../models/categorieRestaurantModel");
 const Restaurant = require("../models/restaurantModel");
-const { Category } = require("../models/foodSystemModel");
+const Category  = require("../models/foodSystemModel");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
 
 // ➕ CREATE
 exports.createCategorieRestaurantProduct = async (req, res) => {
   try {
-    const { restaurant, rating, content, categorie } = req.body;
+    const { restaurant, content, categorie } = req.body;
 
+    // 🔍 Validate required fields
     if (!restaurant || !categorie) {
-      return res.status(400).json({ success: false, message: 'Required fields missing' });
+      return res.status(400).json({
+        success: false,
+        message: "restaurant and categorie fields are required",
+      });
     }
 
-    // 📌 Find the restaurant
-    const restaurantDoc = await Restaurant.findById(restaurant);
-    if (!restaurantDoc) {
-      return res.status(404).json({ success: false, message: 'Restaurant not found' });
-    }
+    let imageUrl = "";
 
-    // ⬇️ Extract locationName from the restaurant document
-    const locationName = restaurantDoc.locationName || [];
-
-    let imageUrl = '';
-    if (req.file) {
-      const result = await cloudinary.uploader.upload(req.file.path);
+    // 📤 Upload image to Cloudinary
+    if (req.file?.path) {
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "categorieRestaurantProduct",
+      });
       imageUrl = result.secure_url;
+
+   
     }
 
-    // 🔥 Create the product
-    const newProduct = await CategorieRestaurantProduct.create({
+    // 🆕 Create new document
+    const newEntry = await CategorieRestaurantProduct.create({
       restaurant,
-      categorie,
-      rating,
       content,
-      locationName,
+      categorie,
       image: imageUrl,
     });
 
-    // 🔁 Populate restaurant and categorie names
-    const populatedProduct = await CategorieRestaurantProduct.findById(newProduct._id)
-      .populate('restaurant', 'restaurantName locationName') // ✅ Include locationName here too
-      .populate('categorie', 'categoryName');
+    // 🔗 Populate referenced fields
+    const populatedData = await CategorieRestaurantProduct.findById(newEntry._id)
+      .populate({
+        path: "categorie",
+        select: "name", // Only include 'name' from Category
+      })
+      .populate({
+        path: "restaurant",
+        select: "rating locationname", // Only include rating and location
+      });
 
-    res.status(201).json({ success: true, data: populatedProduct });
-  } catch (err) {
-    console.error("Error creating:", err);
-    res.status(500).json({ success: false, message: err.message });
+    res.status(201).json({
+      success: true,
+      message: "CategorieRestaurantProduct created successfully",
+      data: populatedData,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
+
+
 // 📥 GET ALL
 exports.getAllCategorieRestaurantProducts = async (req, res) => {
   try {

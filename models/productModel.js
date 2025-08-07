@@ -21,15 +21,11 @@ const reviewSchema = new mongoose.Schema({
 });
 
 const productSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Product name is required'],
-    trim: true
+  productName:{
+    type:String
   },
-  price: {
-    type: Number,
-    required: [true, 'Price is required'],
-    min: [0, 'Price must be a positive number']
+  productPrice:{
+    type:String
   },
   description: {
     type: String,
@@ -49,7 +45,7 @@ const productSchema = new mongoose.Schema({
         type: String,
         enum: ["Full", "Half"],
       },
-      vendorPercentage: { type: Number }, // Only used if type is 'Half'
+      
       price: { type: Number } // Final price, computed during controller logic
     },
     plates: {
@@ -91,10 +87,18 @@ const productSchema = new mongoose.Schema({
   reviews: [reviewSchema],
 
   // Restaurant Reference
-  RestaurantProductId: {
+restaurantProduct: {
+  product: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'RestaurantProduct',
+    required: true
   },
+  quantity: {
+    type: Number,
+   
+  },
+  
+}
 }, {
   timestamps: true
 });

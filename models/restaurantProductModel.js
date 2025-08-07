@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { Category } = require("./foodSystemModel");
 
 const RestaurantProductSchema = new mongoose.Schema({
   restaurantName: { type: String },
@@ -6,9 +7,7 @@ const RestaurantProductSchema = new mongoose.Schema({
   type: { type: [String] },
   rating: { type: Number, default: 0 },
   viewCount: { type: Number, default: 0 },
-  productPrice: { type: Number },
-  vendorHalfPercentage: { type: Number },
-  vendor_Platecost:{type:Number},
+ 
   recommended: [{
     name: { type: String },
     price: { type: Number },
@@ -17,32 +16,11 @@ const RestaurantProductSchema = new mongoose.Schema({
     content: { type: String },
     image: {
     type: String
-  },
-
+  },  category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category", // Reference to the Category model
+    },
   }],
-  addons: {
-    productName: { type: String },
-    variation: {
-      name: { type: String },
-      type: {
-        type: String,
-        enum: ["Full", "Half"],
-        required: true
-      },
-      vendorPercentage: { type: Number }, // Only used if type is 'Half'
-      price: { type: Number } // Final price, computed during controller logic
-    },
-    plates: {
-      name: { type: String },
-      item: { type: Number },
-      platePrice: { type: Number },
-      totalPlatesPrice: { type: Number }
-    },
-    addonImage: {
-      public_id: { type: String },
-      url: { type: String }
-    }
-  },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User"
