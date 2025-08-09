@@ -1,4 +1,6 @@
+const { latitudeKeys, longitudeKeys } = require('geolib');
 const mongoose = require('mongoose');
+const { DOUBLE } = require('sequelize');
 
 const userSchema = new mongoose.Schema({
   firstName: { type: String, required: true },
@@ -9,15 +11,22 @@ const userSchema = new mongoose.Schema({
   isVerified: { type: Boolean, default: false },
   password: { type: String },
 
-  
-  address: {
-    addressLine1: { type: String },
-    addressLine2: { type: String },
-    city: { type: String },
-    state: { type: String },
-    postalCode: { type: String },
-    country: { type: String }
-  },
+
+address: [{
+  addressLine: { type: String, required: true },
+  city: String,
+  state: String,
+  pinCode: String,
+  country: String,
+  phone: String,
+  houseNumber: String,
+  apartment: String,
+  directions: String,
+  street: String,
+  latitud: Number,
+  longitud: Number,
+}],
+
   location: {
     type: {
       type: String,
@@ -46,4 +55,4 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ location: '2dsphere' });
 
 module.exports = mongoose.model('User', userSchema);
- 
+

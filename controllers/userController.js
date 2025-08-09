@@ -303,25 +303,48 @@ const deleteProfile = async (req, res) => {
 
 
 const addAddress = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const address = req.body;
+      try {
+    const userId = req.params.userId;
+    const addresses = req.body;
+
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      return res.status(400).json({ success: false, message: "Request body must be a non-empty array of addresses." });
+    }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
 
-    user.address = address;
+    // Validate and map addresses
+    const newAddresses = addresses.map((addr, i) => {
+      if (!addr.addressLine || typeof addr.addressLine !== 'string' || addr.addressLine.trim() === '') {
+        throw new Error(`addressLine is required and must be non-empty string at index ${i}`);
+      }
+      return {
+        addressLine: addr.addressLine.trim(),
+        city: addr.city,
+        state: addr.state,
+        pinCode: addr.pinCode,
+        country: addr.country,
+        phone: addr.phone,
+        houseNumber: addr.houseNumber,
+        apartment: addr.apartment,
+        directions: addr.directions,
+        street: addr.street,
+        latitud: addr.latitud,
+        longitud: addr.longitud,
+      };
+    });
+
+    user.address = newAddresses;
+    user.markModified('address');
     await user.save();
 
-    res.status(200).json({
-      message: 'Address added successfully ✅',
-      address: user.address
-    });
-  } catch (err) {
-    res.status(500).json({ message: 'Failed to add address ❌', error: err.message });
+    res.status(200).json({ success: true, message: "Addresses updated successfully.", data: user.address });
+  } catch (error) {
+    console.error("Error in addAddress:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error." });
   }
 };
-
 const getAddress = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -340,27 +363,7 @@ const getAddress = async (req, res) => {
 
 
 
-const updateAddress = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const newAddress = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $set: { address: newAddress } },
-      { new: true }
-    );
-
-    if (!user) return res.status(404).json({ message: 'User not found ❌' });
-
-    res.status(200).json({
-      message: 'Address updated successfully ✅',
-      address: user.address
-    });
-  } catch (err) {
-    res.status(500).json({ message: 'Failed to update address ❌', error: err.message });
-  }
-};
 
 const deleteAddress = async (req, res) => {
   try {
@@ -582,7 +585,6 @@ module.exports = {
   deleteProfile,
   addAddress,
   getAddress,
-  updateAddress,
   deleteAddress,
   postLocation,
   updateLocation,

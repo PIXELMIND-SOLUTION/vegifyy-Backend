@@ -14,8 +14,8 @@ const {
   deleteProfile,
   addAddress,
   getAddress,
-  updateAddress,
-  deleteAddress, 
+
+  deleteAddress,
   postLocation,
   updateLocation,
   getLocation,
@@ -44,10 +44,7 @@ router.put('/profile/:userId', updateProfile);           // Update user profile
 router.delete('/profile/:userId', deleteProfile);
 
 // ➕ Add address
-router.post('/address/:userId', addAddress);
-
-// ✏️ Update address
-router.put('/address/:userId', updateAddress);
+router.post('/users/:userId/address', addAddress);
 
 // 🔍 Get address
 router.get('/address/:userId', getAddress);  

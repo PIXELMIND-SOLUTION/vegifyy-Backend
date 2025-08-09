@@ -16,7 +16,32 @@ const RestaurantProductSchema = new mongoose.Schema({
     content: { type: String },
     image: {
     type: String
-  },  category: {
+  },  
+  vendorHalfPercentage: { type: Number },
+  vendor_Platecost: { type: Number },
+  addons: {
+    productName: { type: String },
+    variation: {
+      name: { type: String },
+      type: {
+        type: String,
+        enum: ["Full", "Half"],
+      },
+      
+      price: { type: Number } // Final price, computed during controller logic
+    },
+    plates: {
+      name: { type: String },
+      item: { type: Number },
+      platePrice: { type: Number },
+      totalPlatesPrice: { type: Number }
+    },
+    addonImage: {
+      public_id: { type: String },
+      url: { type: String }
+    }
+  },
+  category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category", // Reference to the Category model
     },

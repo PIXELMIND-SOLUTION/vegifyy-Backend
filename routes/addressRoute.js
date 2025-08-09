@@ -5,6 +5,8 @@ const {upsertAboutUs,getAboutUs} = require('../controllers/aboutUsController');
 const { submitHelpUs, getAllHelpUs } = require('../controllers/helpUsControler');
 const {createNotification,getAllNotifications,markAsRead,deleteNotification} = require('../controllers/notificationController');
 const controller = require('../controllers/orderControler');
+const enquiryController = require("../controllers/enquirycontroller");
+
 const upload = require("../utils/up2");
 
 
@@ -36,7 +38,7 @@ router.put('/order/:orderId/accept', controller.vendorAcceptOrder);
 router.put('/order/:orderId/assign-delivery', controller.assignDeliveryAndTrack);
 
 // Get today's bookings
-router.get('/orders/today', controller.getTodaysBookings);
+router.get('/orders/today/:userId', controller.getTodaysBookingsByUser);
 
 // Get orders by status
 router.post('/orders/status', controller.getOrdersByStatus);
@@ -66,5 +68,12 @@ router.post('/notification', createNotification);
 router.get('/notification', getAllNotifications);
 router.put('/notification/read/:id', markAsRead);
 router.delete('/notification/:id', deleteNotification);
+
+router.post("/enquiries", enquiryController.createEnquiry);
+router.get("/enquiries", enquiryController.getAllEnquiries);
+router.get("/enquiries/:id", enquiryController.getEnquiryById);
+router.put("/enquiries/:id", enquiryController.updateEnquiry);
+router.delete("/enquiries/:id", enquiryController.deleteEnquiry);
+
 
 module.exports = router;

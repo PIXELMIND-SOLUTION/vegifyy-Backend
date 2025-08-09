@@ -703,33 +703,46 @@ exports.assignDeliveryAndTrack = async (req, res) => {
 };
 
 
-// ✅ GET: Today's Bookings
-exports.getTodaysBookings = async (req, res) => {
+// ✅ GET: Today's Bookings by User
+exports.getTodaysBookingsByUser = async (req, res) => {
   try {
+    // Get userId from params or token
+    const userId = req.params.userId || req.user?.id;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required"
+      });
+    }
+
+    // Define today's start and end time
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
+    // Query today's orders for specific user
     const orders = await Order.find({
+      userId: userId,
       orderDate: {
         $gte: startOfDay,
         $lte: endOfDay
       }
-    }).populate("userId", "fullName phoneNumber email")
+    })
+      .populate("userId", "fullName phoneNumber email")
       .populate("items.productId", "name price image");
 
     res.status(200).json({
       success: true,
-      message: "Today's bookings fetched successfully",
+      message: "Today's bookings for the user fetched successfully",
       results: orders.length,
       data: orders
     });
   } catch (err) {
     res.status(500).json({
       success: false,
-      message: "Error fetching today's bookings",
+      message: "Error fetching today's bookings for the user",
       error: err.message
     });
   }

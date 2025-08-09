@@ -8,7 +8,7 @@ const addressRoutes = require('./routes/addressRoute');
 const routes = require("./routes/foodSystemRoute");
 const restaurantProduc = require("./routes/restaurantProductRoute");
 const categorieRestaurantProduct = require('./routes/categorieRestaurantProductRoutes');
-
+// const coupon =require('./routes/couponRoute')
 
 
 dotenv.config();
@@ -39,6 +39,8 @@ app.use('/api',authRoutes);
 app.use('/api',routes);
 app.use('/api',restaurantProduc);
 app.use('/api',categorieRestaurantProduct);
+// app.use('/api',coupon);
+
 
 // Socket.IO connection
 io.on('connection', (socket) => {

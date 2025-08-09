@@ -4,7 +4,21 @@ const Restaurant = require("../models/restaurantModel");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
 const mongoose = require("mongoose");
+const streamifier = require("streamifier");
 
+// Upload buffer helper using streamifier and cloudinary upload_stream
+function uploadBufferToCloudinary(buffer, folder = "") {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
+}
 
 // 🌍 Haversine formula
 const calculateDistance = (coord1, coord2) => {
@@ -36,8 +50,20 @@ exports.createRestaurantProduct = async (req, res) => {
       status,
       viewCount
     } = req.body;
+  // Parse 'type' if it is a JSON string
+    let parsedType = [];
+if (typeof type === "string") {
+  try {
+    parsedType = JSON.parse(type);
+  } catch {
+    // fallback: try splitting by comma
+    parsedType = type.split(",").map(s => s.trim());
+  }
+} else if (Array.isArray(type)) {
+  parsedType = type;
+}
 
-    // ✅ Parse `recommended` data
+    // ✅ Parse recommended data
     let recommended = [];
     if (typeof req.body.recommended === "string") {
       recommended = JSON.parse(req.body.recommended);
@@ -45,7 +71,8 @@ exports.createRestaurantProduct = async (req, res) => {
       recommended = req.body.recommended;
     }
 
-    const files = req.files?.recommendedImages || [];
+    const recommendedFiles = req.files?.recommendedImages || [];
+    const addonFiles = req.files?.addonImage || [];
 
     // ✅ Validate restaurant
     const restaurant = await Restaurant.findById(restaurantId);
@@ -65,18 +92,65 @@ exports.createRestaurantProduct = async (req, res) => {
       restaurant.location.coordinates
     );
 
-    // 📸 Handle recommended item images
+    // 📸 Handle recommended items with addons
     const formattedRecommended = [];
 
     for (let i = 0; i < recommended.length; i++) {
       const item = recommended[i];
       let imageUrl = "";
 
-      if (files[i]) {
-        const upload = await cloudinary.uploader.upload(files[i].path, {
-          folder: "restaurant-recommended"
-        });
+      if (recommendedFiles[i]) {
+        // Use buffer upload
+        const upload = await uploadBufferToCloudinary(recommendedFiles[i].buffer, "restaurant-recommended");
         imageUrl = upload.secure_url;
+      }
+
+      // Addon image upload
+      let addonImageCloud = { public_id: "", url: "" };
+      if (addonFiles[i]) {
+        // addonFiles[i] can be single file or array, handle both
+        const addonBuffer = Array.isArray(addonFiles[i]) ? addonFiles[i][0].buffer : addonFiles[i].buffer;
+        const result = await uploadBufferToCloudinary(addonBuffer, "restaurant-addons");
+        addonImageCloud = {
+          public_id: result.public_id,
+          url: result.secure_url,
+        };
+      }
+
+      // Parse addons and calculate
+      let parsedAddons = {};
+      if (item.addons) {
+        const parsed = typeof item.addons === "string" ? JSON.parse(item.addons) : item.addons;
+        const vendorHalfPercentage = Number(item.vendorHalfPercentage) || 0;
+        const vendor_Platecost = Number(item.vendor_Platecost) || 0;
+        const productPrice = Number(item.price) || 0;
+        const plateItemCount = Number(parsed.plates?.item) || 0;
+
+        const totalPlatesPrice = plateItemCount * vendor_Platecost;
+
+        let variationPrice = 0;
+        const variationType = parsed.variation?.type?.toLowerCase();
+        if (variationType === "full") {
+          variationPrice = productPrice;
+        } else if (variationType === "half") {
+          variationPrice = productPrice - (productPrice * vendorHalfPercentage / 100);
+        }
+
+        parsedAddons = {
+          productName: parsed.productName || "",
+          variation: {
+            name: parsed.variation?.name || "",
+            type: parsed.variation?.type || "",
+            price: variationPrice,
+          },
+          plates: {
+            name: parsed.plates?.name || "",
+            item: plateItemCount,
+            platePrice: vendor_Platecost,
+            totalPlatesPrice: totalPlatesPrice,
+          },
+          addonImage: addonImageCloud,
+        };
       }
 
       formattedRecommended.push({
@@ -86,31 +160,33 @@ exports.createRestaurantProduct = async (req, res) => {
         viewCount: item.viewCount || 0,
         content: item.content || "",
         image: imageUrl,
+        addons: parsedAddons,
         category: item.category || null
       });
     }
 
-    // 🆕 Create product (do NOT store restaurantName here)
+    // 🆕 Create RestaurantProduct
     const newProduct = new RestaurantProduct({
-restaurantName: restaurant.restaurantName,
+      restaurantName: restaurant.restaurantName,
       locationName: restaurant.locationName,
-      type: type || [],
+      type: parsedType,
       rating: restaurant.rating || 0,
       viewCount: viewCount || 0,
       recommended: formattedRecommended,
       user: userId,
-      restaurantId, // ⬅️ Only the ref
+      restaurantId,
       timeAndKm: { distance, time },
       status: status || "active"
     });
 
     const saved = await newProduct.save();
 
-res.status(201).json({
-  success: true,
-  message: "Restaurant Product created successfully",
-  data: saved
-});
+    res.status(201).json({
+      success: true,
+      message: "Restaurant Product created successfully",
+      data: saved
+    });
+
   } catch (error) {
     console.error("Create Restaurant Product Error:", error);
     res.status(500).json({
