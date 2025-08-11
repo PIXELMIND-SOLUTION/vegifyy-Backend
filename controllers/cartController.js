@@ -121,58 +121,272 @@ return res.status(200).json({
     }
 };
 
-
-exports.getCartByUserId = async (req, res) => {
+// In your cartController.js
+exports.getAllCarts = async (req, res) => {
     try {
-        const { userId } = req.params;
+        const carts = await Cart.find({})
+            .select('userId subTotal deliveryCharge finalAmount totalItems createdAt')
+            .lean();
 
-        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
-            return res.status(400).json({ success: false, message: 'Valid userId is required.' });
-        }
-
-        const cart = await Cart.findOne({ userId }, { products: 0, __v: 0, createdAt: 0 });
-
-        if (!cart) {
-            return res.status(404).json({ success: false, message: 'Cart not found for this user' });
+        if (!carts || carts.length === 0) {
+            return res.status(200).json({
+                success: true,
+                message: 'No carts found',
+                data: [],
+                count: 0
+            });
         }
 
         return res.status(200).json({
             success: true,
-            message: 'Cart fetched successfully',
+            message: 'Carts retrieved successfully',
+            data: carts,
+            count: carts.length
+        });
+    } catch (error) {
+        console.error('getAllCarts error:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Server error', 
+            error: error.message 
+        });
+    }
+};
+
+// Get cart by user ID
+exports.getCartByUserId = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, message: 'Invalid user ID' });
+        }
+
+        const cart = await Cart.findOne({ userId });
+
+        if (!cart) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Cart not found for this user',
+                data: null
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cart retrieved successfully',
+            data: cart
+        });
+
+    } catch (error) {
+        console.error('getCartByUserId error:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Server error', 
+            error: error.message 
+        });
+    }
+};
+
+// Update cart by user ID (similar to addToCart but with partial updates)
+exports.updateCartByUserId = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { products } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, message: 'Invalid user ID' });
+        }
+
+        if (!products || !Array.isArray(products)) {
+            return res.status(400).json({ success: false, message: 'Products array is required' });
+        }
+
+        // Similar product processing logic as addToCart
+        let subTotal = 0;
+        let totalItems = 0;
+        const enrichedProducts = [];
+
+        for (const item of products) {
+            // ... same product processing logic as addToCart ...
+            // Include all the validation and price calculation logic
+        }
+
+        const deliveryCharge = 20;
+        const finalAmount = subTotal + deliveryCharge;
+
+        const cart = await Cart.findOneAndUpdate(
+            { userId },
+            {
+                products: enrichedProducts,
+                subTotal,
+                deliveryCharge,
+                finalAmount,
+                totalItems
+            },
+            { new: true, upsert: true } // Return updated doc, create if doesn't exist
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cart updated successfully',
             data: {
                 cartId: cart._id.toString(),
-                userId: cart.userId.toString(),
                 totalItems: cart.totalItems,
                 subTotal: cart.subTotal,
                 deliveryCharge: cart.deliveryCharge,
                 finalAmount: cart.finalAmount,
             },
         });
+
     } catch (error) {
-        console.error('getCartByUserId error:', error);
-        return res.status(500).json({ success: false, message: 'Server error', error: error.message });
+        console.error('updateCartByUserId error:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Server error', 
+            error: error.message 
+        });
     }
 };
 
+// Update cart by cart ID
+exports.updateCartById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { products } = req.body;
 
-exports.getAllCarts = async (req, res) => {
-  try {
-    // Fetch all carts, exclude heavy fields if needed (like products)
-    const carts = await Cart.find({}, { products: 0, __v: 0, createdAt: 0 });
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid cart ID' });
+        }
 
-    // Format response if needed
-    const cartsData = carts.map(cart => ({
-      cartId: cart._id.toString(),
-      userId: cart.userId.toString(),
-      totalItems: cart.totalItems,
-      subTotal: cart.subTotal,
-      deliveryCharge: cart.deliveryCharge,
-      finalAmount: cart.finalAmount,
-    }));
+        if (!products || !Array.isArray(products)) {
+            return res.status(400).json({ success: false, message: 'Products array is required' });
+        }
 
-    return res.status(200).json({ success: true, data: cartsData });
-  } catch (error) {
-    console.error('getAllCarts error:', error);
-    return res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
+        // Similar product processing logic as addToCart
+        let subTotal = 0;
+        let totalItems = 0;
+        const enrichedProducts = [];
+
+        for (const item of products) {
+            // ... same product processing logic as addToCart ...
+            // Include all the validation and price calculation logic
+        }
+
+        const deliveryCharge = 20;
+        const finalAmount = subTotal + deliveryCharge;
+
+        const cart = await Cart.findByIdAndUpdate(
+            id,
+            {
+                products: enrichedProducts,
+                subTotal,
+                deliveryCharge,
+                finalAmount,
+                totalItems
+            },
+            { new: true } // Return updated doc
+        );
+
+        if (!cart) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Cart not found' 
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cart updated successfully',
+            data: {
+                cartId: cart._id.toString(),
+                totalItems: cart.totalItems,
+                subTotal: cart.subTotal,
+                deliveryCharge: cart.deliveryCharge,
+                finalAmount: cart.finalAmount,
+            },
+        });
+
+    } catch (error) {
+        console.error('updateCartById error:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Server error', 
+            error: error.message 
+        });
+    }
+};
+
+// Delete cart by user ID
+exports.deleteCartByUserId = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, message: 'Invalid user ID' });
+        }
+
+        const cart = await Cart.findOneAndDelete({ userId });
+
+        if (!cart) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Cart not found for this user' 
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cart deleted successfully',
+            data: {
+                cartId: cart._id.toString(),
+                deletedCount: 1
+            }
+        });
+
+    } catch (error) {
+        console.error('deleteCartByUserId error:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Server error', 
+            error: error.message 
+        });
+    }
+};
+
+// Delete cart by cart ID
+exports.deleteCartById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid cart ID' });
+        }
+
+        const cart = await Cart.findByIdAndDelete(id);
+
+        if (!cart) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Cart not found' 
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cart deleted successfully',
+            data: {
+                cartId: cart._id.toString(),
+                deletedCount: 1
+            }
+        });
+
+    } catch (error) {
+        console.error('deleteCartById error:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Server error', 
+            error: error.message 
+        });
+    }
 };

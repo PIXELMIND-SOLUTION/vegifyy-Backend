@@ -25,13 +25,6 @@ const cartSchema = new mongoose.Schema({
       },
       // Store snapshot data so we don’t have to populate every time
       name: { type: String },
-      basePrice: { type: Number, default: 0 },
-      variationType: { type: String, enum: ["Full", "Half", null], default: null },
-      variationPrice: { type: Number, default: 0 },
-      platesName: { type: String },
-      platePrice: { type: Number, default: 0 },
-      totalPlatesPrice: { type: Number, default: 0 },
-      image: { type: String }
     },
   ],
 
