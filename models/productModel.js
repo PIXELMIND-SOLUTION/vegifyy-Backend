@@ -53,10 +53,6 @@ const productSchema = new mongoose.Schema({
       item: { type: Number },
       platePrice: { type: Number },
       totalPlatesPrice: { type: Number }
-    },
-    addonImage: {
-      public_id: { type: String },
-      url: { type: String }
     }
   },
   userId: {

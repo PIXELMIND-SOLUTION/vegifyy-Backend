@@ -8,6 +8,7 @@ const addressRoutes = require('./routes/addressRoute');
 const routes = require("./routes/foodSystemRoute");
 const restaurantProduc = require("./routes/restaurantProductRoute");
 const categorieRestaurantProduct = require('./routes/categorieRestaurantProductRoutes');
+const cartController =require('./routes/cartRoute')
 // const coupon =require('./routes/couponRoute')
 
 
@@ -39,6 +40,7 @@ app.use('/api',authRoutes);
 app.use('/api',routes);
 app.use('/api',restaurantProduc);
 app.use('/api',categorieRestaurantProduct);
+app.use('/api',cartController);
 // app.use('/api',coupon);
 
 

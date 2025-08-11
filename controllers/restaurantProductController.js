@@ -42,28 +42,29 @@ const calculateDistance = (coord1, coord2) => {
 };
 
 exports.createRestaurantProduct = async (req, res) => {
-  try {
+   try {
     const {
       restaurantId,
       userId,
       type,
       status,
-      viewCount
+      viewCount,
+      availableDate
     } = req.body;
-  // Parse 'type' if it is a JSON string
-    let parsedType = [];
-if (typeof type === "string") {
-  try {
-    parsedType = JSON.parse(type);
-  } catch {
-    // fallback: try splitting by comma
-    parsedType = type.split(",").map(s => s.trim());
-  }
-} else if (Array.isArray(type)) {
-  parsedType = type;
-}
 
-    // ✅ Parse recommended data
+    // Parse type
+    let parsedType = [];
+    if (typeof type === "string") {
+      try {
+        parsedType = JSON.parse(type);
+      } catch {
+        parsedType = type.split(",").map(s => s.trim());
+      }
+    } else if (Array.isArray(type)) {
+      parsedType = type;
+    }
+
+    // Parse recommended
     let recommended = [];
     if (typeof req.body.recommended === "string") {
       recommended = JSON.parse(req.body.recommended);
@@ -72,52 +73,37 @@ if (typeof type === "string") {
     }
 
     const recommendedFiles = req.files?.recommendedImages || [];
-    const addonFiles = req.files?.addonImage || [];
 
-    // ✅ Validate restaurant
+    // Validate restaurant
     const restaurant = await Restaurant.findById(restaurantId);
     if (!restaurant) {
       return res.status(404).json({ success: false, message: "Restaurant not found" });
     }
 
-    // ✅ Validate user and location
+    // Validate user
     const user = await User.findById(userId);
     if (!user || !user.location?.coordinates) {
       return res.status(404).json({ success: false, message: "User or user location not found" });
     }
 
-    // 📍 Calculate distance and time
+    // Distance calculation
     const { distance, time } = calculateDistance(
       user.location.coordinates,
       restaurant.location.coordinates
     );
 
-    // 📸 Handle recommended items with addons
+    // Prepare recommended array
     const formattedRecommended = [];
-
     for (let i = 0; i < recommended.length; i++) {
       const item = recommended[i];
       let imageUrl = "";
 
       if (recommendedFiles[i]) {
-        // Use buffer upload
         const upload = await uploadBufferToCloudinary(recommendedFiles[i].buffer, "restaurant-recommended");
         imageUrl = upload.secure_url;
       }
 
-      // Addon image upload
-      let addonImageCloud = { public_id: "", url: "" };
-      if (addonFiles[i]) {
-        // addonFiles[i] can be single file or array, handle both
-        const addonBuffer = Array.isArray(addonFiles[i]) ? addonFiles[i][0].buffer : addonFiles[i].buffer;
-        const result = await uploadBufferToCloudinary(addonBuffer, "restaurant-addons");
-        addonImageCloud = {
-          public_id: result.public_id,
-          url: result.secure_url,
-        };
-      }
-
-      // Parse addons and calculate
+      // Parse addons
       let parsedAddons = {};
       if (item.addons) {
         const parsed = typeof item.addons === "string" ? JSON.parse(item.addons) : item.addons;
@@ -148,8 +134,7 @@ if (typeof type === "string") {
             item: plateItemCount,
             platePrice: vendor_Platecost,
             totalPlatesPrice: totalPlatesPrice,
-          },
-          addonImage: addonImageCloud,
+          }
         };
       }
 
@@ -165,7 +150,7 @@ if (typeof type === "string") {
       });
     }
 
-    // 🆕 Create RestaurantProduct
+    // Save product
     const newProduct = new RestaurantProduct({
       restaurantName: restaurant.restaurantName,
       locationName: restaurant.locationName,
@@ -176,6 +161,7 @@ if (typeof type === "string") {
       user: userId,
       restaurantId,
       timeAndKm: { distance, time },
+      availableDate: availableDate ? new Date(availableDate) : null,
       status: status || "active"
     });
 
@@ -196,155 +182,198 @@ if (typeof type === "string") {
     });
   }
 };
-// 📥 GET All Restaurant Products
+// Get all restaurant products
 exports.getAllRestaurantProducts = async (req, res) => {
   try {
-    const products = await RestaurantProduct.find().populate("restaurantId user");
-
+    const products = await RestaurantProduct.find();
     res.status(200).json({
       success: true,
-      message: "All restaurant products fetched successfully",
-      data: products
+      message: "All restaurant products fetched ✅",
+      data: products,
     });
   } catch (error) {
-    console.error("Get All Products Error:", error);
+    console.error("Get All Restaurant Products Error:", error);
     res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message
+      message: "Server Error",
+      error: error.message,
     });
   }
 };
 
-
-// 📥 GET Product By ID (product inside recommended[])
+// Get a restaurant product by its ID
 exports.getRestaurantProductById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { productId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(productId))
+      return res.status(400).json({ success: false, message: "Invalid product ID" });
 
-    const product = await RestaurantProduct.findById(id).populate("restaurantId user");
-
-    if (!product) {
+    const product = await RestaurantProduct.findById(productId);
+    if (!product)
       return res.status(404).json({ success: false, message: "Product not found" });
-    }
 
     res.status(200).json({
       success: true,
-      message: "Product fetched successfully",
-      data: product
+      message: "Product fetched ✅",
+      data: product,
     });
   } catch (error) {
-    console.error("Get Product By ID Error:", error);
+    console.error("Get Restaurant Product By ID Error:", error);
     res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message
+      message: "Server Error",
+      error: error.message,
     });
   }
 };
 
+// Get restaurant products by category ID
 exports.getRestaurantProductsByCategoryId = async (req, res) => {
   try {
     const { categoryId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(categoryId))
+      return res.status(400).json({ success: false, message: "Invalid category ID" });
 
-    // Step 1: Find all restaurant products where at least one recommended item matches the categoryId
-    const restaurantProducts = await RestaurantProduct.find({
-      "recommended.category": categoryId
+    const products = await RestaurantProduct.find({
+      "recommended.category": mongoose.Types.ObjectId(categoryId),
     });
 
-    // Step 2: Filter out only those recommended items that match categoryId
-    const filteredProducts = restaurantProducts.map(product => {
-      const filteredRecommended = product.recommended.filter(item =>
-        item.category == categoryId
-      );
-
-      return {
-        _id: product._id,
-        restaurantName: product.restaurantName,
-        locationName: product.locationName,
-        type: product.type,
-        rating: product.rating,
-        viewCount: product.viewCount,
-        timeAndKm: product.timeAndKm,
-        status: product.status,
-        restaurantId: product.restaurantId,
-        user: product.user,
-        recommended: filteredRecommended
-      };
-    }).filter(item => item.recommended.length > 0); // Exclude empty ones
-
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: "Restaurant products filtered by category",
-      data: filteredProducts
+      message: `Products in category ${categoryId} fetched ✅`,
+      data: products,
     });
-
   } catch (error) {
-    console.error("Error fetching by categoryId:", error);
-    return res.status(500).json({
+    console.error("Get Restaurant Products By Category ID Error:", error);
+    res.status(500).json({
       success: false,
       message: "Server Error",
-      error: error.message
+      error: error.message,
     });
   }
 };
-// 📥 GET Restaurant Product By ID
 exports.updateRestaurantProductById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { productId } = req.params;
     const {
       restaurantId,
       userId,
       type,
       status,
-      viewCount
+      viewCount,
+      availableDate
     } = req.body;
 
-    let restaurantProduct = await RestaurantProduct.findById(id);
-    if (!restaurantProduct) {
-      return res.status(404).json({ success: false, message: "Restaurant Product not found" });
+    // Find existing product
+    const product = await RestaurantProduct.findById(productId);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    // ✅ Parse `recommended`
+    // Validate restaurant if restaurantId provided and changed
+    if (restaurantId && restaurantId !== product.restaurantId.toString()) {
+      const restaurant = await Restaurant.findById(restaurantId);
+      if (!restaurant) {
+        return res.status(404).json({ success: false, message: "Restaurant not found" });
+      }
+      product.restaurantId = restaurantId;
+      product.restaurantName = restaurant.restaurantName;
+      product.locationName = restaurant.locationName;
+      product.rating = restaurant.rating || 0;
+    }
+
+    // Validate user if userId provided and changed
+    if (userId && userId !== product.user.toString()) {
+      const user = await User.findById(userId);
+      if (!user || !user.location?.coordinates) {
+        return res.status(404).json({ success: false, message: "User or user location not found" });
+      }
+      product.user = userId;
+
+      // Recalculate distance and time if restaurantId also set
+      if (restaurantId) {
+        const restaurant = await Restaurant.findById(restaurantId);
+        const { distance, time } = calculateDistance(
+          user.location.coordinates,
+          restaurant.location.coordinates
+        );
+        product.timeAndKm = { distance, time };
+      }
+    }
+
+    // Parse type
+    let parsedType = product.type;
+    if (type !== undefined) {
+      if (typeof type === "string") {
+        try {
+          parsedType = JSON.parse(type);
+        } catch {
+          parsedType = type.split(",").map(s => s.trim());
+        }
+      } else if (Array.isArray(type)) {
+        parsedType = type;
+      }
+      product.type = parsedType;
+    }
+
+    // Parse recommended
     let recommended = [];
-    if (typeof req.body.recommended === "string") {
-      recommended = JSON.parse(req.body.recommended);
-    } else if (Array.isArray(req.body.recommended)) {
-      recommended = req.body.recommended;
+    if (req.body.recommended !== undefined) {
+      if (typeof req.body.recommended === "string") {
+        recommended = JSON.parse(req.body.recommended);
+      } else if (Array.isArray(req.body.recommended)) {
+        recommended = req.body.recommended;
+      }
+    } else {
+      recommended = product.recommended || [];
     }
 
-    const files = req.files?.recommendedImages || [];
+    const recommendedFiles = req.files?.recommendedImages || [];
 
-    // 🏪 Validate restaurant
-    const restaurant = await Restaurant.findById(restaurantId || restaurantProduct.restaurantId);
-    if (!restaurant) {
-      return res.status(404).json({ success: false, message: "Restaurant not found" });
-    }
-
-    // 👤 Validate user
-    const user = await User.findById(userId || restaurantProduct.user);
-    if (!user || !user.location?.coordinates) {
-      return res.status(404).json({ success: false, message: "User or user location not found" });
-    }
-
-    // 📍 Calculate distance and time
-    const { distance, time } = calculateDistance(
-      user.location.coordinates,
-      restaurant.location.coordinates
-    );
-
-    // 🖼️ Upload recommended images if provided
+    // Prepare recommended array
     const formattedRecommended = [];
-
     for (let i = 0; i < recommended.length; i++) {
       const item = recommended[i];
-      let imageUrl = item.image || ""; // fallback to old image
+      let imageUrl = item.image || "";
 
-      if (files[i]) {
-        const upload = await cloudinary.uploader.upload(files[i].path, {
-          folder: "restaurant-recommended"
-        });
+      if (recommendedFiles[i]) {
+        const upload = await uploadBufferToCloudinary(recommendedFiles[i].buffer, "restaurant-recommended");
         imageUrl = upload.secure_url;
+      }
+
+      // Parse addons
+      let parsedAddons = {};
+      if (item.addons) {
+        const parsed = typeof item.addons === "string" ? JSON.parse(item.addons) : item.addons;
+        const vendorHalfPercentage = Number(item.vendorHalfPercentage) || 0;
+        const vendor_Platecost = Number(item.vendor_Platecost) || 0;
+        const productPrice = Number(item.price) || 0;
+        const plateItemCount = Number(parsed.plates?.item) || 0;
+
+        const totalPlatesPrice = plateItemCount * vendor_Platecost;
+
+        let variationPrice = 0;
+        const variationType = parsed.variation?.type?.toLowerCase();
+        if (variationType === "full") {
+          variationPrice = productPrice;
+        } else if (variationType === "half") {
+          variationPrice = productPrice - (productPrice * vendorHalfPercentage / 100);
+        }
+
+        parsedAddons = {
+          productName: parsed.productName || "",
+          variation: {
+            name: parsed.variation?.name || "",
+            type: parsed.variation?.type || "",
+            price: variationPrice,
+          },
+          plates: {
+            name: parsed.plates?.name || "",
+            item: plateItemCount,
+            platePrice: vendor_Platecost,
+            totalPlatesPrice: totalPlatesPrice,
+          }
+        };
       }
 
       formattedRecommended.push({
@@ -354,28 +383,25 @@ exports.updateRestaurantProductById = async (req, res) => {
         viewCount: item.viewCount || 0,
         content: item.content || "",
         image: imageUrl,
+        addons: parsedAddons,
         category: item.category || null
       });
     }
 
-    // 🔁 Update fields
-    restaurantProduct.restaurantName = restaurant.restaurantName;
-    restaurantProduct.locationName = restaurant.locationName;
-    restaurantProduct.type = type || restaurantProduct.type;
-    restaurantProduct.rating = restaurant.rating || restaurantProduct.rating;
-    restaurantProduct.viewCount = viewCount || restaurantProduct.viewCount;
-    restaurantProduct.recommended = formattedRecommended;
-    restaurantProduct.user = userId || restaurantProduct.user;
-    restaurantProduct.restaurantId = restaurantId || restaurantProduct.restaurantId;
-    restaurantProduct.timeAndKm = { distance, time };
-    restaurantProduct.status = status || restaurantProduct.status;
+    product.recommended = formattedRecommended;
 
-    const updated = await restaurantProduct.save();
+    // Update other simple fields if provided
+    if (viewCount !== undefined) product.viewCount = viewCount;
+    if (availableDate !== undefined) product.availableDate = availableDate ? new Date(availableDate) : null;
+    if (status !== undefined) product.status = status;
+
+    // Save updated product
+    const saved = await product.save();
 
     res.status(200).json({
       success: true,
       message: "Restaurant Product updated successfully",
-      data: updated
+      data: saved
     });
 
   } catch (error) {
@@ -389,29 +415,27 @@ exports.updateRestaurantProductById = async (req, res) => {
 };
 
 
-// 🗑️ DELETE Product By productId (inside recommended[])
+// Delete restaurant product by ID
 exports.deleteRestaurantProductById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { productId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(productId))
+      return res.status(400).json({ success: false, message: "Invalid product ID" });
 
-    const deleted = await RestaurantProduct.findByIdAndDelete(id);
-
-    if (!deleted) {
-      return res.status(404).json({ success: false, message: "Restaurant Product not found" });
-    }
+    const deletedProduct = await RestaurantProduct.findByIdAndDelete(productId);
+    if (!deletedProduct)
+      return res.status(404).json({ success: false, message: "Product not found" });
 
     res.status(200).json({
       success: true,
-      message: "Restaurant Product deleted successfully"
+      message: "Product deleted successfully ✅",
     });
   } catch (error) {
     console.error("Delete Restaurant Product Error:", error);
     res.status(500).json({
       success: false,
       message: "Server Error",
-      error: error.message
+      error: error.message,
     });
   }
 };
-
-

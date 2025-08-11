@@ -7,45 +7,43 @@ const RestaurantProductSchema = new mongoose.Schema({
   type: { type: [String] },
   rating: { type: Number, default: 0 },
   viewCount: { type: Number, default: 0 },
- 
+
+  // Recommended products
   recommended: [{
     name: { type: String },
     price: { type: Number },
     rating: { type: Number, default: 0 },
     viewCount: { type: Number, default: 0 },
     content: { type: String },
-    image: {
-    type: String
-  },  
-  vendorHalfPercentage: { type: Number },
-  vendor_Platecost: { type: Number },
-  addons: {
-    productName: { type: String },
-    variation: {
-      name: { type: String },
-      type: {
-        type: String,
-        enum: ["Full", "Half"],
+    image: { type: String },
+    vendorHalfPercentage: { type: Number },
+    vendor_Platecost: { type: Number },
+
+    // Optional Addons
+    addons: {
+      productName: { type: String },
+      variation: {
+        name: { type: String },
+        type: {
+          type: String,
+          enum: ["Full", "Half"],
+        },
+        price: { type: Number }
       },
-      
-      price: { type: Number } // Final price, computed during controller logic
+      plates: {
+        name: { type: String },
+        item: { type: Number },
+        platePrice: { type: Number },
+        totalPlatesPrice: { type: Number }
+      }
     },
-    plates: {
-      name: { type: String },
-      item: { type: Number },
-      platePrice: { type: Number },
-      totalPlatesPrice: { type: Number }
-    },
-    addonImage: {
-      public_id: { type: String },
-      url: { type: String }
-    }
-  },
-  category: {
+
+    category: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Category", // Reference to the Category model
+      ref: "Category"
     },
   }],
+
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User"

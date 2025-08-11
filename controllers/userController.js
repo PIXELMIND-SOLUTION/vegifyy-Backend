@@ -268,114 +268,209 @@ const getProfile = async (req, res) => {
   }
 };
 
-const updateProfile = async (req, res) => {
+const uploadProfileImage = async (req, res) => {
   try {
     const { userId } = req.params;
-    const updatedUser = await User.findByIdAndUpdate(userId, req.body, { new: true });
-    if (!updatedUser) return res.status(404).json({ message: 'User not found' });
+    if (!req.file) {
+      return res.status(400).json({ message: 'Image file is required' });
+    }
+
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'profile_images',
+      width: 400,
+      height: 400,
+      crop: 'fill'
+    });
+
+
+    // Update user image field with Cloudinary public_id
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { image: result.public_id },
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
     res.status(200).json({
-      message: 'Profile updated ✅',
-      user: {
-        userId: updatedUser._id,
-        fullName: `${updatedUser.firstName} ${updatedUser.lastName}`,
-        email: updatedUser.email,
-        phoneNumber: updatedUser.phoneNumber,
-        referralCode: updatedUser.referralCode,
-        coins: updatedUser.coins || 0
-      }
+      message: 'Profile image uploaded successfully ✅',
+      imageUrl: cloudinary.url(result.public_id, { width: 200, height: 200, crop: 'fill' }),
+      user
     });
-  } catch (err) {
-    res.status(500).json({ message: 'Profile update failed', error: err.message });
+  } catch (error) {
+    res.status(500).json({ message: 'Upload failed', error: error.message });
   }
 };
 
-const deleteProfile = async (req, res) => {
+const deleteProfileImage = async (req, res) => {
   try {
-    const deletedUser = await User.findByIdAndDelete(req.params.userId);
-    if (!deletedUser) return res.status(404).json({ message: 'User not found ❌' });
+    const { userId } = req.params;
 
-    res.status(200).json({ message: 'Profile deleted successfully ✅' });
-  } catch (err) {
-    res.status(500).json({ message: 'Failed to delete profile ❌', error: err.message });
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (!user.image) {
+      return res.status(400).json({ message: 'No profile image to delete' });
+    }
+
+    // Optionally delete image from Cloudinary
+    await cloudinary.uploader.destroy(user.image);
+
+    // Remove image field from user document
+    user.image = undefined;
+    await user.save();
+
+    res.status(200).json({ message: 'Profile image deleted successfully ✅' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to delete profile image ❌', error: error.message });
   }
 };
 
 
 const addAddress = async (req, res) => {
-      try {
-    const userId = req.params.userId;
-    const addresses = req.body;
+  try {
+    const { userId } = req.params;
+    const {
+      addressLine,
+      city,
+      state,
+      pinCode,
+      country,
+      phone,
+      houseNumber,
+      apartment,
+      directions,
+      street,
+      latitud,
+      longitud
+    } = req.body;
 
-    if (!Array.isArray(addresses) || addresses.length === 0) {
-      return res.status(400).json({ success: false, message: "Request body must be a non-empty array of addresses." });
+    // Validate required field
+    if (!addressLine) {
+      return res.status(400).json({ message: "addressLine is required ❌" });
     }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ success: false, message: "User not found." });
-
-    // Validate and map addresses
-    const newAddresses = addresses.map((addr, i) => {
-      if (!addr.addressLine || typeof addr.addressLine !== 'string' || addr.addressLine.trim() === '') {
-        throw new Error(`addressLine is required and must be non-empty string at index ${i}`);
-      }
-      return {
-        addressLine: addr.addressLine.trim(),
-        city: addr.city,
-        state: addr.state,
-        pinCode: addr.pinCode,
-        country: addr.country,
-        phone: addr.phone,
-        houseNumber: addr.houseNumber,
-        apartment: addr.apartment,
-        directions: addr.directions,
-        street: addr.street,
-        latitud: addr.latitud,
-        longitud: addr.longitud,
-      };
-    });
-
-    user.address = newAddresses;
-    user.markModified('address');
-    await user.save();
-
-    res.status(200).json({ success: true, message: "Addresses updated successfully.", data: user.address });
-  } catch (error) {
-    console.error("Error in addAddress:", error);
-    res.status(500).json({ success: false, message: error.message || "Server error." });
-  }
-};
-const getAddress = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const user = await User.findById(userId).select('address');
     if (!user) return res.status(404).json({ message: 'User not found ❌' });
 
+    // Create new address object
+    const newAddress = {
+      addressLine,
+      city: city || "",
+      state: state || "",
+      pinCode: pinCode || "",
+      country: country || "",
+      phone: phone || "",
+      houseNumber: houseNumber || "",
+      apartment: apartment || "",
+      directions: directions || "",
+      street: street || "",
+      latitud: latitud || null,
+      longitud: longitud || null
+    };
+
+    // If user already has addresses, push, else create new array
+    if (!Array.isArray(user.address)) {
+      user.address = [];
+    }
+    user.address.push(newAddress);
+
+    await user.save();
+
     res.status(200).json({
-      message: 'Address fetched successfully ✅',
+      message: 'Address added successfully ✅',
       address: user.address
     });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to fetch address ❌', error: err.message });
+    res.status(500).json({ message: 'Failed to add address ❌', error: err.message });
+  }
+};
+// 📌 Get All Addresses of a User
+const getAllAddresses = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found ❌' });
+
+    res.status(200).json({
+      success: true,
+      message: "All addresses fetched ✅",
+      addresses: user.address || []
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Failed to fetch addresses ❌", error: err.message });
   }
 };
 
-
-
-
-
-const deleteAddress = async (req, res) => {
+// 📌 Get Single Address by Address ID
+const getAddressById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId);
-    if (!user) return res.status(404).json({ message: 'User not found ❌' });
+    const { userId, addressId } = req.params;
 
-    user.address = {}; // clear the address object
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found ❌' });
+
+    const address = user.address.id(addressId);
+    if (!address) return res.status(404).json({ success: false, message: 'Address not found ❌' });
+
+    res.status(200).json({
+      success: true,
+      message: "Address fetched ✅",
+      address
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Failed to fetch address ❌", error: err.message });
+  }
+};
+
+// 📌 Update Address by Address ID
+const updateAddressById = async (req, res) => {
+  try {
+    const { userId, addressId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found ❌' });
+
+    const address = user.address.id(addressId);
+    if (!address) return res.status(404).json({ success: false, message: 'Address not found ❌' });
+
+    // Update fields dynamically (only provided fields will change)
+    Object.assign(address, req.body);
+
     await user.save();
 
-    res.status(200).json({ message: 'Address deleted successfully ✅' });
+    res.status(200).json({
+      success: true,
+      message: "Address updated successfully ✅",
+      address
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to delete address ❌', error: err.message });
+    res.status(500).json({ success: false, message: "Failed to update address ❌", error: err.message });
+  }
+};
+
+// 📌 Delete Address by Address ID
+const deleteAddressById = async (req, res) => {
+  try {
+    const { userId, addressId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found ❌' });
+
+    const address = user.address.id(addressId);
+    if (!address) return res.status(404).json({ success: false, message: 'Address not found ❌' });
+
+    address.remove();
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Address deleted successfully ✅"
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Failed to delete address ❌", error: err.message });
   }
 };
 
@@ -581,11 +676,13 @@ module.exports = {
   verifyForgotOtp,
   resetForgotPassword,
   getProfile,
-  updateProfile,
-  deleteProfile,
+ uploadProfileImage,
+ deleteProfileImage,
   addAddress,
-  getAddress,
-  deleteAddress,
+  getAllAddresses,
+  getAddressById,
+  updateAddressById,
+  deleteAddressById,
   postLocation,
   updateLocation,
   getLocation,

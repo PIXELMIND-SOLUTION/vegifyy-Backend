@@ -1,3 +1,4 @@
+// utils/multer2.js
 const multer = require("multer");
 const path = require("path");
 
@@ -15,8 +16,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({ storage, fileFilter });
 
 const multiUpload = upload.fields([
-  { name: "recommendedImages", maxCount: 50 },
-  { name: "addonImage", maxCount: 50 }
+  { name: "recommendedImages", maxCount: 50 }
 ]);
 
 module.exports = multiUpload;

@@ -10,12 +10,13 @@ const {
   verifyForgotOtp,
   resetForgotPassword,
   getProfile,
-  updateProfile,
-  deleteProfile,
+  uploadProfileImage,
+  deleteProfileImage,
   addAddress,
-  getAddress,
-
-  deleteAddress,
+  getAllAddresses,
+  getAddressById,
+  updateAddressById,
+  deleteAddressById,
   postLocation,
   updateLocation,
   getLocation,
@@ -39,17 +40,28 @@ router.post('/forgot-password/send-otp', sendForgotOtp);
 router.post('/forgot-password/verify-otp', verifyForgotOtp);
 router.post('/forgot-password/reset/:userId', resetForgotPassword); // Example
 // 👤 User Profile
-router.get('/profile/:userId', getProfile);              // Get user profile
-router.put('/profile/:userId', updateProfile);           // Update user profile
-router.delete('/profile/:userId', deleteProfile);
+// Route to get user profile by userId
+router.get('/users/:userId/profile', getProfile);
+
+router.put('/users/:userId/profile-image', upload.single('image'), uploadProfileImage);
+
+// Delete profile image by userId
+router.delete('/users/:userId/profile-image', deleteProfileImage);
+
 
 // ➕ Add address
-router.post('/users/:userId/address', addAddress);
+router.post("/users/:userId/address", addAddress);
+// Get all addresses for a user
+router.get('/users/:userId/addresses', getAllAddresses);
 
-// 🔍 Get address
-router.get('/address/:userId', getAddress);  
-router.delete('/address/:userId', deleteAddress);
+// Get a single address by addressId for a user
+router.get('/users/:userId/addresses/:addressId', getAddressById);
 
+// Update an address by addressId for a user
+router.put('/users/:userId/addresses/:addressId', updateAddressById);
+
+// Delete an address by addressId for a user
+router.delete('/users/:userId/addresses/:addressId', deleteAddressById);
 
 
 // POST location (only once)

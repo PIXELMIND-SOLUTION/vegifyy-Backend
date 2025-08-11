@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   otp: { type: String },
   isVerified: { type: Boolean, default: false },
   password: { type: String },
+  image:{type:String},
 
 
 address: [{

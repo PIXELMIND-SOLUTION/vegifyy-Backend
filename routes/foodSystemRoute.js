@@ -14,11 +14,6 @@ router.get('/veg-food/:id', controller.getVegFoodById);
 router.put('/veg-food/:id', upload.single('image'), controller.updateVegFood);
 router.delete('/veg-food/:id', controller.deleteVegFood);
 
-router.post("/cart", controller.addToCart);
-router.get("/cart/:userId", controller.getCart);
-router.put("/cart/:userId/:productId", controller.updateCartItem);
-router.delete("/cart/:userId/:productId", controller.removeFromCart);
-
 // Public routes
 // @route   POST /api/restaurants
 
