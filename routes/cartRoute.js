@@ -8,21 +8,15 @@ router.post('/cart', cartController.addToCart);
 
 
 // Get all carts (summary only)
-router.get('/cart', cartController.getAllCarts);
-
-// Get cart by user ID
-router.get('/cart/:userId', cartController.getCartByUserId);
-
-// Update cart by user ID
-router.put('/cart/user/:userId', cartController.updateCartByUserId);
+router.get("/cart", cartController.getAllCarts);
+router.get("/cart/user/:userId", cartController.getCartByUserId);
+router.get("/cart/:cartId", cartController.getCartById);
 
 // Update cart by cart ID
-router.put('/cart/:id', cartController.updateCartById);
+router.patch('/cart/:cartId', cartController.updateByCartId);
 
-// Delete cart by user ID
-router.delete('/cart/user/:userId', cartController.deleteCartByUserId);
 
 // Delete cart by cart ID
-router.delete('/cart/:id', cartController.deleteCartById);
+router.delete('/cart/:cartid', cartController.deleteProductFromCartById);
 
 module.exports = router;
