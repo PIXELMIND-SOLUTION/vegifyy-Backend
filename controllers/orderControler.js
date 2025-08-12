@@ -2,6 +2,8 @@ const Product = require("../models/productModel");
 const Order = require("../models/orderModel");
 const RestaurantProduct = require("../models/restaurantProductModel");
 const User = require("../models/userModel");
+const Cart = require("../models/cartModel");
+const Restaurant = require("../models/restaurantModel");
 const cloudinary = require('../config/cloudinary');
 const mongoose = require("mongoose");
 const fs = require("fs");
@@ -469,136 +471,234 @@ exports.removeFromWishlist = async (req, res) => {
 // Create Order
 exports.createOrder = async (req, res) => {
   try {
-    const { userId, items, totalAmount } = req.body;
+    const { userId, cartId, restaurantId, paymentMethod, paymentStatus } = req.body;
 
-    if (!userId || !Array.isArray(items) || items.length === 0 || !totalAmount) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide userId, items (array), and totalAmount"
-      });
+    // 1. Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid userId" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(cartId)) {
+      return res.status(400).json({ success: false, message: "Invalid cartId" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      return res.status(400).json({ success: false, message: "Invalid restaurantId" });
+    }
+    if (!["COD", "Online"].includes(paymentMethod)) {
+      return res.status(400).json({ success: false, message: "Invalid payment method" });
     }
 
-    const newOrder = await Order.create({ userId, items, totalAmount });
+      // 2. Get cart without restaurant populate
+    const cart = await Cart.findById(cartId).populate("userId", "address");
+    if (!cart) {
+      return res.status(404).json({ success: false, message: "Cart not found" });
+    }
 
-    res.status(201).json({
+    // 3. Get restaurant location directly
+    const restaurant = await Restaurant.findById(restaurantId, "locationName");
+    if (!restaurant) {
+      return res.status(404).json({ success: false, message: "Restaurant not found" });
+    }
+
+    // 3. Get user delivery address
+    const user = await User.findById(userId);
+    if (!user || !user.address || user.address.length === 0) {
+      return res.status(404).json({ success: false, message: "User address not found" });
+    }
+    const deliveryAddress = user.address[0]; // first address
+
+    // 4. Create order object from cart
+    const orderData = {
+      userId,
+      cartId,
+      restaurantId,
+      restaurantLocation:restaurant.locationName || "",
+      deliveryAddress,
+      paymentMethod,
+      paymentStatus: paymentStatus || "Pending",
+      orderStatus: "Pending",
+      totalItems: cart.totalItems,
+      subTotal: cart.subTotal,
+      deliveryCharge: cart.deliveryCharge,
+      totalPayable: cart.finalAmount
+    };
+
+    // 5. If payment successful, zero out amounts
+    if (paymentStatus === "Paid") {
+      orderData.subTotal = 0;
+      orderData.deliveryCharge = 0;
+      orderData.totalPayable = 0;
+    }
+  // 7. Save order
+    let order = await Order.create(orderData);
+
+    // 8. Populate restaurant details before sending response
+    order = await Order.findById(order._id)
+      .populate("restaurantId", "restaurantName locationName");
+
+
+    // 7. Build response
+    let message = "Order created successfully";
+    if (paymentStatus === "Paid") {
+      message = "Payment is successful";
+    }
+
+    return res.status(201).json({
       success: true,
-      message: "Order placed successfully",
-      data: newOrder
+      message,
+      data: {
+        orderId: order._id,
+        totalItems: order.totalItems,
+        subTotal: order.subTotal,
+        deliveryCharge: order.deliveryCharge,
+        totalPayable: order.totalPayable,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
+        restaurantLocation: order.restaurantLocation,
+        restaurantDetails: order.restaurantId // contains restaurantName & locationName
+      }
     });
-  } catch (err) {
-    res.status(500).json({
+  
+  } catch (error) {
+    console.error("createOrderFromCart error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Error placing order",
-      error: err.message
+      message: "Server error",
+      error: error.message
     });
   }
 };
-// Get all orders
+// -------------------------
+// GET ALL ORDERS
+// -------------------------
+
 exports.getAllOrders = async (req, res) => {
   try {
     const orders = await Order.find()
-      .populate("userId", "fullName phoneNumber email") // Optional projection
-      .populate("items.productId", "name price image");
+      .populate("userId", "name email") // populate user info
+      .populate("restaurantId", "restaurantName locationName") // populate restaurant info
+      .populate("cartId") // populate full cart details if needed
+      .sort({ createdAt: -1 }); // latest orders first
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      results: orders.length,
+      count: orders.length,
       data: orders
     });
-  } catch (err) {
-    res.status(500).json({
+  } catch (error) {
+    console.error("getAllOrders error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Error fetching orders",
-      error: err.message
+      message: "Server error",
+      error: error.message
     });
   }
 };
 
-
-// Get order by ID
-exports.getOrderById = async (req, res) => {
+// -------------------------
+// GET ORDERS BY USER ID
+// -------------------------
+exports.getOrdersByUserId = async (req, res) => {
   try {
-    const { orderId } = req.params;
+    const { userId } = req.params;
 
-    const order = await Order.findById(orderId)
-      .populate("userId", "fullName phoneNumber email")
-      .populate("items.productId", "name price image");
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid userId" });
+    }
+
+    const orders = await Order.find({ userId })
+      .populate("restaurantId", "name locationName");
+
+    if (!orders.length) {
+      return res.status(404).json({ success: false, message: "No orders found for this user" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      data: orders
+    });
+  } catch (error) {
+    console.error("getOrdersByUserId error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+// -------------------------
+// UPDATE ORDER BY USER ID
+// -------------------------
+exports.updateOrderByUserId = async (req, res) => {
+  try {
+    const { userId, orderId } = req.params;
+    const { paymentStatus, orderStatus } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid userId" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
+    }
+
+    const order = await Order.findOne({ _id: orderId, userId });
 
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found"
-      });
+      return res.status(404).json({ success: false, message: "Order not found for this user" });
     }
 
-    res.status(200).json({ success: true, data: order });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error fetching order",
-      error: err.message
-    });
-  }
-};
+    // Update only allowed fields
+    if (paymentStatus) order.paymentStatus = paymentStatus;
+    if (orderStatus) order.orderStatus = orderStatus;
 
-
-// Update order
-exports.updateOrder = async (req, res) => {
-  try {
-    const updated = await Order.findByIdAndUpdate(
-      req.params.orderId,
-      req.body,
-      { new: true }
-    );
-
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found"
-      });
+    // If payment is successful, zero out amounts
+    if (paymentStatus === "Paid") {
+      order.subTotal = 0;
+      order.deliveryCharge = 0;
+      order.totalPayable = 0;
     }
 
-    res.status(200).json({
+    await order.save();
+
+    return res.status(200).json({
       success: true,
-      message: "Order updated",
-      data: updated
+      message: "Order updated successfully",
+      data: order
     });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error updating order",
-      error: err.message
-    });
+  } catch (error) {
+    console.error("updateOrderByUserId error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
 
-
-// Delete order
-exports.deleteOrder = async (req, res) => {
+// -------------------------
+// DELETE ORDER BY USER ID
+// -------------------------
+exports.deleteOrderByUserId = async (req, res) => {
   try {
-    const deleted = await Order.findByIdAndDelete(req.params.orderId);
+    const { userId, orderId } = req.params;
 
-    if (!deleted) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found"
-      });
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid userId" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
     }
 
-    res.status(200).json({
+    const order = await Order.findOneAndDelete({ _id: orderId, userId });
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found for this user" });
+    }
+
+    return res.status(200).json({
       success: true,
-      message: "Order deleted"
+      message: "Order deleted successfully",
+      deletedOrderId: orderId
     });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Error deleting order",
-      error: err.message
-    });
+  } catch (error) {
+    console.error("deleteOrderByUserId error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
-
-
 // Vendor accept order
 exports.vendorAcceptOrder = async (req, res) => {
   try {
@@ -643,46 +743,43 @@ exports.assignDeliveryAndTrack = async (req, res) => {
 
 
 // ✅ GET: Today's Bookings by User
-exports.getTodaysBookingsByUser = async (req, res) => {
+exports.getTodaysBookingsByUserId = async (req, res) => {
+  // Define the helper function inside this method
+  const getTodayDateRange = () => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    return { start, end };
+  };
+
   try {
-    // Get userId from params or token
-    const userId = req.params.userId || req.user?.id;
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: "User ID is required"
-      });
+    const { userId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid userId" });
     }
 
-    // Define today's start and end time
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const { start, end } = getTodayDateRange();
 
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // Query today's orders for specific user
     const orders = await Order.find({
-      userId: userId,
-      orderDate: {
-        $gte: startOfDay,
-        $lte: endOfDay
-      }
-    })
-      .populate("userId", "fullName phoneNumber email")
-      .populate("items.productId", "name price image");
+      userId,
+      createdAt: { $gte: start, $lte: end }
+    }).populate("restaurantId", "restaurantName locationName");
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Today's bookings for the user fetched successfully",
-      results: orders.length,
+      message: `Today's bookings fetched successfully for user ${userId}`,
       data: orders
     });
-  } catch (err) {
-    res.status(500).json({
+  } catch (error) {
+    console.error("getTodaysBookingsByUserId error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Error fetching today's bookings for the user",
-      error: err.message
+      message: "Server error",
+      error: error.message
     });
   }
 };
@@ -690,30 +787,26 @@ exports.getTodaysBookingsByUser = async (req, res) => {
 // ✅ POST: Get Orders by Status
 exports.getOrdersByStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { orderStatus } = req.query; // <-- get from query params
 
-    if (!status) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid status"
-      });
+    const validStatuses = ["Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"];
+    if (!validStatuses.includes(orderStatus)) {
+      return res.status(400).json({ success: false, message: "Invalid order status" });
     }
 
-    const orders = await Order.find({ status })
-      .populate("userId", "fullName phoneNumber email")
-      .populate("items.productId", "name price image");
+    const orders = await Order.find({ orderStatus }).populate("restaurantId", "restaurantName locationName");
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: `Orders with status '${status}' fetched successfully`,
-      results: orders.length,
+      message: `Orders with status "${orderStatus}" fetched successfully`,
       data: orders
     });
-  } catch (err) {
-    res.status(500).json({
+  } catch (error) {
+    console.error("getOrdersByStatus error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Error fetching orders by status",
-      error: err.message
+      message: "Server error",
+      error: error.message
     });
   }
 };

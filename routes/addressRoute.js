@@ -27,9 +27,9 @@ router.delete('/wishlist/:userId/:productId', controller.removeFromWishlist);
 // ---------- ORDER ROUTES ----------
 router.post('/order', controller.createOrder);
 router.get('/orders', controller.getAllOrders);
-router.get('/order/:orderId', controller.getOrderById);
-router.put('/order/:orderId', controller.updateOrder);
-router.delete('/order/:orderId', controller.deleteOrder);
+router.get('/orders/user/:userId', controller.getOrdersByUserId);
+router.put('/orders/user/:userId/:orderId', controller.updateOrderByUserId);
+router.delete('/orders/user/:userId/:orderId', controller.deleteOrderByUserId);
 
 // Vendor accepts order
 router.put('/order/:orderId/accept', controller.vendorAcceptOrder);
@@ -38,10 +38,10 @@ router.put('/order/:orderId/accept', controller.vendorAcceptOrder);
 router.put('/order/:orderId/assign-delivery', controller.assignDeliveryAndTrack);
 
 // Get today's bookings
-router.get('/orders/today/:userId', controller.getTodaysBookingsByUser);
+router.get('/orders/today/:userId', controller.getTodaysBookingsByUserId);
 
 // Get orders by status
-router.post('/orders/status', controller.getOrdersByStatus);
+router.get('/orders/status', controller.getOrdersByStatus);
 
 
 router.post('/help', submitHelpUs);

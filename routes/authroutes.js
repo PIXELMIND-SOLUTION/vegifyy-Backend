@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   register,
   verifyOtp,
+  getReferralCodeByUserId,
   setPassword,
   login,
   sendForgotOtp,
@@ -33,7 +34,8 @@ const upload = require('../utils/multer');
 
 // 🔐 Authentication Flow
 router.post('/register', register);              // Step 1: Register with referralCode (optional)
-router.post('/verify-otp', verifyOtp);           // Step 2: OTP verification (fixed OTP 1234)
+router.post('/verify-otp', verifyOtp);          // Step 2: OTP verification (fixed OTP 1234)
+router.get('/referral/:userId', getReferralCodeByUserId);
 router.post('/set-password/:userId', setPassword);       // Step 3: Set password after OTP
 router.post('/login', login);    
 router.post('/forgot-password/send-otp', sendForgotOtp);

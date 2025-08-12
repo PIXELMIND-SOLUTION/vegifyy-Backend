@@ -1,7 +1,7 @@
 // ✅ User Controller with Complete Flow
 const mongoose = require('mongoose');
-const User= require('../models/userModel');
-const Banner =require('../models/banner');
+const User = require('../models/userModel');
+const Banner = require('../models/banner');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { generateReferralCode } = require('../utils/refeeral');
@@ -78,6 +78,7 @@ const verifyOtp = async (req, res) => {
     const decoded = verifyTempToken(token);
     if (otp !== decoded.otp) return res.status(400).json({ message: 'Invalid OTP' });
 
+
     const user = await User.create({
       _id: new mongoose.Types.ObjectId(),
       firstName: decoded.firstName,
@@ -91,12 +92,48 @@ const verifyOtp = async (req, res) => {
 
     res.status(200).json({
       message: 'OTP verified ✅',
-      userId: user._id
+      userId: user._id, referralCode: user.referralCode // return immediately too
     });
   } catch (err) {
     res.status(400).json({ message: 'OTP verification failed ❌', error: err.message });
   }
 };
+
+// ✅ Get Referral Code by User ID
+// ✅ Get Referral Code by User ID
+const getReferralCodeByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid userId' });
+    }
+
+    const user = await User.findById(userId).select('referralCode');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Convert Mongoose document to plain JS object
+    const userObj = user.toObject();
+
+    console.log('User object:', userObj);
+
+    res.status(200).json({
+      message: 'Referral code fetched successfully ✅',
+      referralCode: userObj.referralCode
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to get referral code ❌',
+      error: error.message
+    });
+  }
+};
+
+module.exports = { getReferralCodeByUserId };
+
 
 
 const setPassword = async (req, res) => {
@@ -194,15 +231,15 @@ const verifyForgotOtp = async (req, res) => {
     tempForgotToken = null;
 
     // Send response with userId and success message
-    return res.status(200).json({ 
+    return res.status(200).json({
       userId: userId,
       message: "OTP verified ✅"
     });
 
   } catch (err) {
-    return res.status(400).json({ 
-      message: "OTP verification failed ❌", 
-      error: err.message 
+    return res.status(400).json({
+      message: "OTP verification failed ❌",
+      error: err.message
     });
   }
 };
@@ -237,9 +274,9 @@ const resetForgotPassword = async (req, res) => {
     return res.status(200).json({ message: "Password reset successful ✅" });
 
   } catch (err) {
-    return res.status(500).json({ 
-      message: "Password reset failed ❌", 
-      error: err.message 
+    return res.status(500).json({
+      message: "Password reset failed ❌",
+      error: err.message
     });
   }
 };
@@ -482,9 +519,9 @@ const postLocation = async (req, res) => {
 
     // Validate coordinates
     if (latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Both latitude and longitude are required" 
+        message: "Both latitude and longitude are required"
       });
     }
 
@@ -492,9 +529,9 @@ const postLocation = async (req, res) => {
     const lng = parseFloat(longitude);
 
     if (isNaN(lat) || isNaN(lng)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Coordinates must be valid numbers" 
+        message: "Coordinates must be valid numbers"
       });
     }
 
@@ -511,9 +548,9 @@ const postLocation = async (req, res) => {
     );
 
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "User not found" 
+        message: "User not found"
       });
     }
 
@@ -670,14 +707,15 @@ const deleteBanner = async (req, res) => {
 module.exports = {
   register,
   verifyOtp,
+  getReferralCodeByUserId,
   setPassword,
   login,
   sendForgotOtp,
   verifyForgotOtp,
   resetForgotPassword,
   getProfile,
- uploadProfileImage,
- deleteProfileImage,
+  uploadProfileImage,
+  deleteProfileImage,
   addAddress,
   getAllAddresses,
   getAddressById,
@@ -686,7 +724,7 @@ module.exports = {
   postLocation,
   updateLocation,
   getLocation,
-  getReferralByUserId, 
+  getReferralByUserId,
   createBanner,
   getAllBanners,
   getBannerById,

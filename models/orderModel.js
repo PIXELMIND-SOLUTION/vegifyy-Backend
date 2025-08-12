@@ -1,55 +1,66 @@
-const mongoose = require('mongoose');
+// models/orderModel.js
+const mongoose = require("mongoose");
 
-const orderSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'User' // ✅ Replace 'User' with the actual user model name
-  },
-  items: [
-    {
-      productId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Product', // ✅ Reference to Product model
-        required: true
-      },
-      quantity: {
-        type: Number,
-        required: true,
-        min: 1
-      },
-      price: {
-        type: Number,
-        required: true,
-        min: 0
-      }
+const orderSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true
+    },
+    cartId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Cart",
+      required: true
+    },
+    restaurantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Restaurant",
+      required: true
+    },
+    restaurantLocation: {
+      type: String, // Will be populated from Restaurant.locationName
+      required: false
+    },
+    deliveryAddress: {
+      type: Object, // Stores entire address object from User.address
+      required: true
+    },
+    paymentMethod: {
+      type: String,
+      enum: ["COD", "Online"],
+      required: true
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["Pending", "Paid", "Failed"],
+      default: "Pending"
+    },
+    orderStatus: {
+      type: String,
+      enum: ["Pending", "Preparing", "On the Way", "Delivered", "Cancelled"],
+      default: "Pending"
+    },
+    totalItems: {
+      type: Number,
+      default: 0
+    },
+    subTotal: {
+      type: Number,
+      default: 0
+    },
+    deliveryCharge: {
+      type: Number,
+      default: 0
+    },
+    totalPayable: {
+      type: Number,
+      default: 0
     }
-  ],
-  totalAmount: {
-    type: Number,
-    required: true,
-    min: 0
   },
-  status: {
-    type: String,
-    enum: ['pending', 'confirmed', 'ongoing', 'cancelled', 'shipped', 'delivered'],
-    default: 'pending'
-  },
-  deliveryUserId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
-  },
-  deliveryEta: {
-    type: Number, // in minutes
-    default: null
-  },
-  orderDate: {
-    type: Date,
-    default: Date.now
+  {
+    timestamps: true // adds createdAt and updatedAt
   }
-}, {
-  timestamps: true
-});
+);
 
-module.exports = mongoose.model('Order', orderSchema);
+module.exports = mongoose.model("Order", orderSchema);
