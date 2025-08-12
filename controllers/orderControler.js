@@ -470,7 +470,7 @@ exports.removeFromWishlist = async (req, res) => {
 
 // Create Order
 exports.createOrder = async (req, res) => {
-  try {
+   try {
     const { userId, cartId, restaurantId, paymentMethod, paymentStatus } = req.body;
 
     // 1. Validate IDs
@@ -486,32 +486,38 @@ exports.createOrder = async (req, res) => {
     if (!["COD", "Online"].includes(paymentMethod)) {
       return res.status(400).json({ success: false, message: "Invalid payment method" });
     }
+    if (paymentStatus && !["Pending", "Paid", "Failed"].includes(paymentStatus)) {
+      return res.status(400).json({ success: false, message: "Invalid payment status" });
+    }
 
-      // 2. Get cart without restaurant populate
-    const cart = await Cart.findById(cartId).populate("userId", "address");
+    // 2. Fetch cart
+    const cart = await Cart.findById(cartId);
     if (!cart) {
       return res.status(404).json({ success: false, message: "Cart not found" });
     }
+    if (cart.userId.toString() !== userId) {
+      return res.status(400).json({ success: false, message: "Cart does not belong to user" });
+    }
 
-    // 3. Get restaurant location directly
-    const restaurant = await Restaurant.findById(restaurantId, "locationName");
+    // 3. Get restaurant location and name
+    const restaurant = await Restaurant.findById(restaurantId, "locationName restaurantName");
     if (!restaurant) {
       return res.status(404).json({ success: false, message: "Restaurant not found" });
     }
 
-    // 3. Get user delivery address
+    // 4. Get user delivery address
     const user = await User.findById(userId);
     if (!user || !user.address || user.address.length === 0) {
       return res.status(404).json({ success: false, message: "User address not found" });
     }
-    const deliveryAddress = user.address[0]; // first address
+    const deliveryAddress = user.address[0];
 
-    // 4. Create order object from cart
+    // 5. Prepare order data including products snapshot from cart
     const orderData = {
       userId,
       cartId,
       restaurantId,
-      restaurantLocation:restaurant.locationName || "",
+      restaurantLocation: restaurant.locationName || "",
       deliveryAddress,
       paymentMethod,
       paymentStatus: paymentStatus || "Pending",
@@ -519,24 +525,26 @@ exports.createOrder = async (req, res) => {
       totalItems: cart.totalItems,
       subTotal: cart.subTotal,
       deliveryCharge: cart.deliveryCharge,
-      totalPayable: cart.finalAmount
+      totalPayable: cart.finalAmount,
+      products: cart.products.map(p => ({
+        restaurantProductId: p.restaurantProductId,
+        recommendedId: p.recommendedId,
+        quantity: p.quantity,
+        name: p.name,
+        basePrice: p.basePrice,
+        addons: p.addons,
+        image: p.image,
+      })),
     };
 
-    // 5. If payment successful, zero out amounts
-    if (paymentStatus === "Paid") {
-      orderData.subTotal = 0;
-      orderData.deliveryCharge = 0;
-      orderData.totalPayable = 0;
-    }
-  // 7. Save order
+    // 6. Create order
     let order = await Order.create(orderData);
 
-    // 8. Populate restaurant details before sending response
+    // 7. Populate restaurant details before sending response
     order = await Order.findById(order._id)
       .populate("restaurantId", "restaurantName locationName");
 
-
-    // 7. Build response
+    // 8. Build response message
     let message = "Order created successfully";
     if (paymentStatus === "Paid") {
       message = "Payment is successful";
@@ -555,17 +563,14 @@ exports.createOrder = async (req, res) => {
         paymentStatus: order.paymentStatus,
         orderStatus: order.orderStatus,
         restaurantLocation: order.restaurantLocation,
-        restaurantDetails: order.restaurantId // contains restaurantName & locationName
+        restaurantDetails: order.restaurantId,
+        products: order.products
       }
     });
-  
+
   } catch (error) {
-    console.error("createOrderFromCart error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message
-    });
+    console.error("createOrder error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
 // -------------------------

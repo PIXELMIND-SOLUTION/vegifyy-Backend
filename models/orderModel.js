@@ -1,4 +1,3 @@
-// models/orderModel.js
 const mongoose = require("mongoose");
 
 const orderSchema = new mongoose.Schema(
@@ -19,11 +18,11 @@ const orderSchema = new mongoose.Schema(
       required: true
     },
     restaurantLocation: {
-      type: String, // Will be populated from Restaurant.locationName
+      type: String, // populated from Restaurant.locationName
       required: false
     },
     deliveryAddress: {
-      type: Object, // Stores entire address object from User.address
+      type: mongoose.Schema.Types.Mixed, // whole address object (flexible schema)
       required: true
     },
     paymentMethod: {
@@ -59,7 +58,7 @@ const orderSchema = new mongoose.Schema(
     }
   },
   {
-    timestamps: true // adds createdAt and updatedAt
+    timestamps: true
   }
 );
 
