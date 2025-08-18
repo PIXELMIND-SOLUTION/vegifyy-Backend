@@ -25,16 +25,27 @@ const calculateDistance = (coord1, coord2) => {
   return R * c;
 };
 
+// Helper to upload images to Cloudinary
+async function uploadFilesToCloudinary(files) {
+  if (!files) return [];
+  const filesArray = Array.isArray(files) ? files : [files];
+  const urls = [];
+  for (const file of filesArray) {
+    const result = await cloudinary.uploader.upload(file.path);
+    urls.push(result.secure_url);
+  }
+  return urls;
+}
+
 exports.createProduct = async (req, res) => {
-    try {
-    let {
+   try {
+    const {
       description,
-      locationname,
       contentname,
       userId,
       RestaurantProductId,
+      recommendedId,
       reviews,
-      addons,
       type,
       rating,
       viewcount,
@@ -43,6 +54,7 @@ exports.createProduct = async (req, res) => {
     const vendorHalfPercentage = 50;
     const vendor_Platecost = 5;
 
+    // Fetch user and restaurant product
     const user = await User.findById(userId);
     const restaurantProduct = await RestaurantProduct.findById(RestaurantProductId).populate("restaurantId");
 
@@ -53,33 +65,28 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    // Get product name & price from recommended array
-    const recommendedItem = restaurantProduct.recommended?.[0];
-    const productName = recommendedItem?.name?.trim() || "Unnamed Product";
-    const productPrice = Number(recommendedItem?.price) || 0;
+    // Find recommended item safely
+    let recommendedItem;
+    if (restaurantProduct.recommended && Array.isArray(restaurantProduct.recommended)) {
+      recommendedItem = restaurantProduct.recommended.find(r => r._id && r._id.toString() === recommendedId);
+    }
+
+    if (!recommendedItem) {
+      return res.status(400).json({
+        success: false,
+        message: "Recommended item not found in restaurant product"
+      });
+    }
+
+    const productName = recommendedItem.name?.trim() || "Unnamed Product";
+    const productPrice = Number(recommendedItem.price) || 0;
     const price = productPrice;
 
-    // Upload product images
-    let productImages = [];
-    if (req.files?.productImages) {
-      const images = Array.isArray(req.files.productImages) ? req.files.productImages : [req.files.productImages];
-      for (const file of images) {
-        const result = await cloudinary.uploader.upload(file.path);
-        productImages.push(result.secure_url);
-      }
-    }
+    // Upload product and review images
+    const productImages = await uploadFilesToCloudinary(req.files?.productImages);
+    const reviewImages = await uploadFilesToCloudinary(req.files?.reviewImages);
 
-    // Upload review images
-    let reviewImages = [];
-    if (req.files?.reviewImages) {
-      const images = Array.isArray(req.files.reviewImages) ? req.files.reviewImages : [req.files.reviewImages];
-      for (const file of images) {
-        const result = await cloudinary.uploader.upload(file.path);
-        reviewImages.push(result.secure_url);
-      }
-    }
-
-    // Parse reviews
+    // Parse reviews and attach images
     let parsedReviews = [];
     if (reviews) {
       parsedReviews = JSON.parse(reviews);
@@ -88,42 +95,43 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    // Remove addonImage upload code here
-    // let addonImageCloud = { public_id: "", url: "" };
-    // if (req.files?.addonImage) { ... }  <-- Remove all this block
+    // Add addons only if recommended item has addons
+    let parsedAddons;
+    if (recommendedItem.addons && typeof recommendedItem.addons === "object") {
+      const addonsData = recommendedItem.addons;
 
-    // Parse and construct addons without addonImage
-    let parsedAddons = {};
-    if (addons) {
-      const parsed = JSON.parse(addons);
-      const plateItemCount = Number(parsed.plates?.item) || 0;
-      const totalPlatesPrice = plateItemCount * vendor_Platecost;
-
-      let variationPrice = 0;
-      const variationType = parsed.variation?.type?.toLowerCase();
-
-      if (variationType === "full") {
-        variationPrice = productPrice;
-      } else if (variationType === "half") {
-        variationPrice = productPrice - (productPrice * vendorHalfPercentage / 100);
+      // Safe variation type
+      let variationType = "";
+      if (addonsData.variation && addonsData.variation.type) {
+        variationType = Array.isArray(addonsData.variation.type)
+          ? addonsData.variation.type[0]
+          : addonsData.variation.type;
+        if (variationType) variationType = variationType.toString().toLowerCase();
       }
 
+      let variationPrice = 0;
+      if (variationType === "full") variationPrice = productPrice;
+      else if (variationType === "half") variationPrice = productPrice - (productPrice * vendorHalfPercentage / 100);
+
+      const plateCount = Number(addonsData.plates?.item || 0);
+      const totalPlatesPrice = plateCount * vendor_Platecost;
+
       parsedAddons = {
-        productName: productName,
+        productName,
         variation: {
-          name: parsed.variation?.name || "",
-          type: parsed.variation?.type || "",
+          name: addonsData.variation?.name || "",
+          type: Array.isArray(addonsData.variation?.type)
+            ? addonsData.variation.type
+            : [addonsData.variation?.type || ""],
           vendorPercentage: vendorHalfPercentage,
-          price: variationPrice,
+          price: variationPrice
         },
         plates: {
-          name: parsed.plates?.name || "",
-          item: plateItemCount,
+          name: addonsData.plates?.name || "",
+          item: plateCount,
           platePrice: vendor_Platecost,
-          totalPlatesPrice: totalPlatesPrice,
-        },
-        // Remove addonImage from here
-        // addonImage: addonImageCloud,
+          totalPlatesPrice
+        }
       };
     }
 
@@ -131,20 +139,22 @@ exports.createProduct = async (req, res) => {
     let deliveryTime = null;
     const restaurantCoordinates = restaurantProduct?.restaurantId?.location?.coordinates;
     const userCoordinates = user?.location?.coordinates;
-
     if (restaurantCoordinates && userCoordinates) {
       const dist = calculateDistance(restaurantCoordinates, userCoordinates);
       const estimatedTime = Math.round(dist * 2); // 2 min per km
       deliveryTime = estimatedTime > 60 ? "60+ mins" : `${estimatedTime} mins`;
     }
 
-    const parsedLocation = JSON.parse(locationname || "[]");
+    // Location from RestaurantProduct
+    const parsedLocation = restaurantProduct.locationName ? [restaurantProduct.locationName] : [];
+
+    // Parse type
     const parsedType = JSON.parse(type || "[]");
 
-    // Save product
+    // Create product
     const product = await Product.create({
-      productName: productName,
-      productPrice: productPrice,
+      productName,
+      productPrice,
       description,
       image: productImages,
       locationname: parsedLocation,
@@ -156,14 +166,15 @@ exports.createProduct = async (req, res) => {
       rating: Number(rating) || 0,
       viewcount: Number(viewcount) || 0,
       type: parsedType,
-      addons: parsedAddons,  // no addonImage here now
+      addons: parsedAddons, // include only if exists
       deliverytime: deliveryTime,
+      recommendedId,
       restaurantProduct: {
         product: restaurantProduct._id,
-        productName: productName,
+        productName,
         quantity: 1,
-        price: price,
-      },
+        price,
+      }
     });
 
     const productObj = product.toObject();
@@ -188,18 +199,28 @@ exports.createProduct = async (req, res) => {
 // ✅ GET all products
 exports.getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find();
-    res.status(200).json({
+    const products = await Product.find()
+      .populate({
+        path: "userId",
+        select: "firstName lastName email phoneNumber"
+      })
+      .populate({
+        path: "restaurantProduct.product",
+        select: "restaurantName locationName"
+      });
+
+    return res.status(200).json({
       success: true,
       message: "Products fetched successfully",
-      data: products,
+      count: products.length,
+      data: products
     });
-  } catch (error) {
-    console.error("❌ Get all products error:", error);
-    res.status(500).json({
+  } catch (err) {
+    console.error("❌ Get all products error:", err);
+    return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
+      error: err.message
     });
   }
 };
@@ -240,161 +261,110 @@ exports.updateProductById = async (req, res) => {
   try {
     const { productId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ success: false, message: "Invalid product ID" });
+      return res.status(400).json({ success: false, message: "Invalid productId" });
     }
 
-    // Fetch existing product
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    // Extract fields from req.body (only update fields that are present)
-    const updateData = {};
+    const {
+      description,
+      contentname,
+      type,
+      rating,
+      viewcount,
+      recommendedId
+    } = req.body;
 
-    const updatableFields = [
-      "description",
-      "locationname",
-      "contentname",
-      "userId",
-      "RestaurantProductId",
-      "reviews",
-      "addons",
-      "type",
-      "rating",
-      "viewcount"
-    ];
+    // Update basic fields
+    if (description !== undefined) product.description = description;
+    if (contentname !== undefined) product.contentname = contentname;
+    if (rating !== undefined) product.rating = Number(rating);
+    if (viewcount !== undefined) product.viewcount = Number(viewcount);
+    if (type !== undefined) product.type = JSON.parse(type || "[]");
+    if (recommendedId !== undefined) product.recommendedId = recommendedId;
 
-    updatableFields.forEach(field => {
-      if (req.body[field] !== undefined) updateData[field] = req.body[field];
-    });
-
-    // Parse JSON fields if sent as strings
-    if (typeof updateData.locationname === "string") {
-      try {
-        updateData.locationname = JSON.parse(updateData.locationname);
-      } catch {
-        updateData.locationname = [];
-      }
-    }
-    if (typeof updateData.type === "string") {
-      try {
-        updateData.type = JSON.parse(updateData.type);
-      } catch {
-        updateData.type = [];
-      }
-    }
-    if (typeof updateData.reviews === "string") {
-      try {
-        updateData.reviews = JSON.parse(updateData.reviews);
-      } catch {
-        updateData.reviews = [];
-      }
-    }
-    if (typeof updateData.addons === "string") {
-      try {
-        updateData.addons = JSON.parse(updateData.addons);
-      } catch {
-        updateData.addons = {};
-      }
-    }
-
-    // Handle image uploads if present
+    // Handle images
     if (req.files?.productImages) {
-      const images = Array.isArray(req.files.productImages) ? req.files.productImages : [req.files.productImages];
-      const productImages = [];
-      for (const file of images) {
-        const result = await cloudinary.uploader.upload(file.path);
-        productImages.push(result.secure_url);
-      }
-      updateData.image = productImages;
+      const uploadedImages = await uploadFilesToCloudinary(req.files.productImages);
+      product.image = uploadedImages;
     }
-
     if (req.files?.reviewImages) {
-      const images = Array.isArray(req.files.reviewImages) ? req.files.reviewImages : [req.files.reviewImages];
-      const reviewImages = [];
-      for (const file of images) {
-        const result = await cloudinary.uploader.upload(file.path);
-        reviewImages.push(result.secure_url);
-      }
-      if (updateData.reviews && Array.isArray(updateData.reviews)) {
-        updateData.reviews.forEach((rev, i) => {
-          if (reviewImages[i]) rev.image = reviewImages[i];
+      const uploadedReviewImages = await uploadFilesToCloudinary(req.files.reviewImages);
+      if (product.reviews && Array.isArray(product.reviews)) {
+        product.reviews.forEach((rev, i) => {
+          if (uploadedReviewImages[i]) rev.image = uploadedReviewImages[i];
         });
       }
     }
 
-    // Update vendorHalfPercentage and vendor_Platecost only if sent
-    if (req.body.vendorHalfPercentage !== undefined) {
-      updateData.vendorHalfPercentage = Number(req.body.vendorHalfPercentage);
-    }
-    if (req.body.vendor_Platecost !== undefined) {
-      updateData.vendor_Platecost = Number(req.body.vendor_Platecost);
-    }
+    // Update addons if recommendedId provided
+    if (recommendedId && product.restaurantProduct?.product) {
+      const restaurantProduct = await RestaurantProduct.findById(product.restaurantProduct.product);
+      const recommendedItem = restaurantProduct.recommended.find(r => r._id && r._id.toString() === recommendedId);
 
-    // Calculate deliverytime again if userId or RestaurantProductId is updated
-    if (updateData.userId || updateData.RestaurantProductId) {
-      const user = await User.findById(updateData.userId || product.userId);
-      const restaurantProduct = await RestaurantProduct.findById(updateData.RestaurantProductId || product.RestaurantProductId).populate("restaurantId");
-
-      if (user && restaurantProduct) {
-        const restaurantCoordinates = restaurantProduct?.restaurantId?.location?.coordinates;
-        const userCoordinates = user?.location?.coordinates;
-
-        if (restaurantCoordinates && userCoordinates) {
-          const dist = calculateDistance(restaurantCoordinates, userCoordinates);
-          const estimatedTime = Math.round(dist * 2);
-          updateData.deliverytime = estimatedTime > 60 ? "60+ mins" : `${estimatedTime} mins`;
+      if (recommendedItem?.addons && typeof recommendedItem.addons === "object") {
+        const addonsData = recommendedItem.addons;
+        const vendorHalfPercentage = 50;
+        const vendor_Platecost = 5;
+        let variationType = "";
+        if (addonsData.variation && addonsData.variation.type) {
+          variationType = Array.isArray(addonsData.variation.type)
+            ? addonsData.variation.type[0]
+            : addonsData.variation.type;
+          variationType = variationType?.toString().toLowerCase();
         }
+        const variationPrice = variationType === "full" ? recommendedItem.price : variationType === "half" ? recommendedItem.price - (recommendedItem.price * vendorHalfPercentage / 100) : 0;
+        const plateCount = Number(addonsData.plates?.item || 0);
+        const totalPlatesPrice = plateCount * vendor_Platecost;
+
+        product.addons = {
+          productName: recommendedItem.name,
+          variation: {
+            name: addonsData.variation?.name || "",
+            type: Array.isArray(addonsData.variation?.type) ? addonsData.variation.type : [addonsData.variation?.type || ""],
+            vendorPercentage: vendorHalfPercentage,
+            price: variationPrice
+          },
+          plates: {
+            name: addonsData.plates?.name || "",
+            item: plateCount,
+            platePrice: vendor_Platecost,
+            totalPlatesPrice
+          }
+        };
       }
     }
 
-    // Update the product document
-    const updatedProduct = await Product.findByIdAndUpdate(productId, updateData, { new: true });
+    await product.save();
+    return res.status(200).json({ success: true, message: "Product updated successfully", data: product });
 
-    res.status(200).json({
-      success: true,
-      message: "Product updated successfully",
-      data: updatedProduct,
-    });
-
-  } catch (error) {
-    console.error("❌ Update product error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message,
-    });
+  } catch (err) {
+    console.error("❌ Update Product Error:", err);
+    return res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
-
 // ✅ DELETE product
 exports.deleteProductById = async (req, res) => {
-  try {
+   try {
     const { productId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ success: false, message: "Invalid product ID" });
+      return res.status(400).json({ success: false, message: "Invalid productId" });
     }
 
-    const product = await Product.findByIdAndDelete(productId);
+    const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    // Optionally: Delete images from cloudinary if stored public_ids are saved
+    await Product.findByIdAndDelete(productId);
+    return res.status(200).json({ success: true, message: "Product deleted successfully" });
 
-    res.status(200).json({
-      success: true,
-      message: "Product deleted successfully",
-      data: product,
-    });
-  } catch (error) {
-    console.error("❌ Delete product error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message,
-    });
+  } catch (err) {
+    console.error("❌ Delete Product Error:", err);
+    return res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
 
@@ -470,81 +440,127 @@ exports.removeFromWishlist = async (req, res) => {
 
 // Create Order
 exports.createOrder = async (req, res) => {
-   try {
+    try {
     const { userId, cartId, restaurantId, paymentMethod, paymentStatus } = req.body;
 
-    // 1. Validate IDs
+    // 1. Validate IDs and inputs
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Invalid userId" });
+      return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
     if (!mongoose.Types.ObjectId.isValid(cartId)) {
-      return res.status(400).json({ success: false, message: "Invalid cartId" });
+      return res.status(400).json({ success: false, message: "Valid cartId is required." });
     }
     if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
-      return res.status(400).json({ success: false, message: "Invalid restaurantId" });
+      return res.status(400).json({ success: false, message: "Valid restaurantId is required." });
     }
     if (!["COD", "Online"].includes(paymentMethod)) {
-      return res.status(400).json({ success: false, message: "Invalid payment method" });
+      return res.status(400).json({ success: false, message: "Invalid payment method." });
     }
     if (paymentStatus && !["Pending", "Paid", "Failed"].includes(paymentStatus)) {
-      return res.status(400).json({ success: false, message: "Invalid payment status" });
+      return res.status(400).json({ success: false, message: "Invalid payment status." });
     }
 
     // 2. Fetch cart
     const cart = await Cart.findById(cartId);
     if (!cart) {
-      return res.status(404).json({ success: false, message: "Cart not found" });
+      return res.status(404).json({ success: false, message: "Cart not found." });
     }
     if (cart.userId.toString() !== userId) {
-      return res.status(400).json({ success: false, message: "Cart does not belong to user" });
+      return res.status(400).json({ success: false, message: "Cart does not belong to user." });
     }
 
-    // 3. Get restaurant location and name
+    // 3. Get restaurant location
     const restaurant = await Restaurant.findById(restaurantId, "locationName restaurantName");
     if (!restaurant) {
-      return res.status(404).json({ success: false, message: "Restaurant not found" });
+      return res.status(404).json({ success: false, message: "Restaurant not found." });
     }
 
-    // 4. Get user delivery address
-    const user = await User.findById(userId);
-    if (!user || !user.address || user.address.length === 0) {
-      return res.status(404).json({ success: false, message: "User address not found" });
+    // 4. Get user delivery address (MANDATORY from user profile only)
+    const user = await User.findById(userId, "address");
+    let deliveryAddress = {};
+    if (user && user.address && user.address.length > 0) {
+      deliveryAddress = user.address[0];   // Always take the first address from user
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "User does not have a saved delivery address."
+      });
     }
-    const deliveryAddress = user.address[0];
 
-    // 5. Prepare order data including products snapshot from cart
+    // 5. Recalculate products to ensure consistent pricing
+    let subTotal = 0;
+    let totalItems = 0;
+    const cleanProducts = [];
+
+    for (const prod of cart.products) {
+      const restaurantProduct = await RestaurantProduct.findById(prod.restaurantProductId);
+      const recommendedItem = restaurantProduct?.recommended.id(prod.recommendedId);
+      if (!recommendedItem) continue;
+
+      let unitPrice = recommendedItem.price || 0;
+      const hasAddons = recommendedItem.addons &&
+                        (recommendedItem.addons.variation || recommendedItem.addons.plates);
+      const addOnClean = {};
+
+      // Handle addons (Half variation + Plate cost)
+      if (hasAddons && prod.addOn) {
+        if (recommendedItem.addons.variation && recommendedItem.addons.variation.type.includes("Half")) {
+          if (prod.addOn.variation === "Half") {
+            addOnClean.variation = "Half";
+            unitPrice = recommendedItem.calculatedPrice?.half ||
+                        Math.round(unitPrice * (recommendedItem.vendorHalfPercentage / 100));
+          }
+        }
+        if (recommendedItem.addons.plates && prod.addOn.plateitems && prod.addOn.plateitems > 0) {
+          addOnClean.plateitems = prod.addOn.plateitems;
+          const plateCost = prod.addOn.plateitems * (recommendedItem.vendor_Platecost || 0);
+          unitPrice += plateCost;
+        }
+      }
+
+      // Update totals
+      subTotal += unitPrice * prod.quantity;
+      totalItems += prod.quantity;
+
+      cleanProducts.push({
+        restaurantProductId: prod.restaurantProductId,
+        recommendedId: prod.recommendedId,
+        quantity: prod.quantity,
+        name: recommendedItem.name,
+        basePrice: unitPrice,
+        image: recommendedItem.image || "",
+        ...(hasAddons && Object.keys(addOnClean).length > 0 ? { addOn: addOnClean } : {})
+      });
+    }
+
+    // Delivery charge and final amount
+    const deliveryCharge = totalItems === 0 ? 0 : 20;
+    const totalPayable = subTotal + deliveryCharge;
+
+    // 6. Prepare order data
     const orderData = {
       userId,
       cartId,
       restaurantId,
       restaurantLocation: restaurant.locationName || "",
-      deliveryAddress,
+      deliveryAddress,  // always from user profile
       paymentMethod,
       paymentStatus: paymentStatus || "Pending",
       orderStatus: "Pending",
-      totalItems: cart.totalItems,
-      subTotal: cart.subTotal,
-      deliveryCharge: cart.deliveryCharge,
-      totalPayable: cart.finalAmount,
-      products: cart.products.map(p => ({
-        restaurantProductId: p.restaurantProductId,
-        recommendedId: p.recommendedId,
-        quantity: p.quantity,
-        name: p.name,
-        basePrice: p.basePrice,
-        addons: p.addons,
-        image: p.image,
-      })),
+      totalItems,
+      subTotal,
+      deliveryCharge,
+      totalPayable,
+      products: cleanProducts
     };
 
-    // 6. Create order
+    // 7. Save order
     let order = await Order.create(orderData);
 
-    // 7. Populate restaurant details before sending response
+    // 8. Populate restaurant details for response
     order = await Order.findById(order._id)
       .populate("restaurantId", "restaurantName locationName");
 
-    // 8. Build response message
     let message = "Order created successfully";
     if (paymentStatus === "Paid") {
       message = "Payment is successful";
@@ -563,6 +579,7 @@ exports.createOrder = async (req, res) => {
         paymentStatus: order.paymentStatus,
         orderStatus: order.orderStatus,
         restaurantLocation: order.restaurantLocation,
+        deliveryAddress: order.deliveryAddress,   // <-- added to response
         restaurantDetails: order.restaurantId,
         products: order.products
       }
@@ -578,51 +595,48 @@ exports.createOrder = async (req, res) => {
 // -------------------------
 
 exports.getAllOrders = async (req, res) => {
-  try {
+    try {
     const orders = await Order.find()
-      .populate("userId", "name email") // populate user info
-      .populate("restaurantId", "restaurantName locationName") // populate restaurant info
-      .populate("cartId") // populate full cart details if needed
-      .sort({ createdAt: -1 }); // latest orders first
-
-    return res.status(200).json({
-      success: true,
-      count: orders.length,
-      data: orders
-    });
+      .populate("restaurantId", "restaurantName locationName")
+      .populate("userId", "firstName lastName phoneNumber");
+    return res.status(200).json({ success: true, count: orders.length, data: orders });
   } catch (error) {
     console.error("getAllOrders error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
 
 // -------------------------
 // GET ORDERS BY USER ID
 // -------------------------
-exports.getOrdersByUserId = async (req, res) => {
+exports.getOrderById = async (req, res) => {
   try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Valid orderId is required." });
+    }
+    const order = await Order.findById(id)
+      .populate("restaurantId", "restaurantName locationName")
+      .populate("userId", "firstName lastName phoneNumber");
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found." });
+    }
+    return res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    console.error("getOrderById error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+exports.getOrdersByUserId = async (req, res) => {
+   try {
     const { userId } = req.params;
-
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Invalid userId" });
+      return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
-
     const orders = await Order.find({ userId })
-      .populate("restaurantId", "name locationName");
-
-    if (!orders.length) {
-      return res.status(404).json({ success: false, message: "No orders found for this user" });
-    }
-
-    return res.status(200).json({
-      success: true,
-      count: orders.length,
-      data: orders
-    });
+      .populate("restaurantId", "restaurantName locationName");
+    return res.status(200).json({ success: true, count: orders.length, data: orders });
   } catch (error) {
     console.error("getOrdersByUserId error:", error);
     return res.status(500).json({ success: false, message: "Server error", error: error.message });
@@ -634,33 +648,32 @@ exports.getOrdersByUserId = async (req, res) => {
 // -------------------------
 exports.updateOrderByUserId = async (req, res) => {
   try {
-    const { userId, orderId } = req.params;
-    const { paymentStatus, orderStatus } = req.body;
+    const { userId } = req.body;
+    const { orderId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Invalid userId" });
-    }
+    // 1. Validate IDs
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ success: false, message: "Invalid orderId" });
+      return res.status(400).json({ success: false, message: "Valid orderId is required." });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
 
+    // 2. Find the order
     const order = await Order.findOne({ _id: orderId, userId });
-
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found for this user" });
+      return res.status(404).json({ success: false, message: "Order not found for this user." });
     }
 
-    // Update only allowed fields
-    if (paymentStatus) order.paymentStatus = paymentStatus;
-    if (orderStatus) order.orderStatus = orderStatus;
+    // 3. Apply updates (only allow certain fields)
+    const allowedUpdates = ["paymentStatus", "orderStatus", "deliveryAddress"];
+    allowedUpdates.forEach(field => {
+      if (req.body[field] !== undefined) {
+        order[field] = req.body[field];
+      }
+    });
 
-    // If payment is successful, zero out amounts
-    if (paymentStatus === "Paid") {
-      order.subTotal = 0;
-      order.deliveryCharge = 0;
-      order.totalPayable = 0;
-    }
-
+    // 4. Save updated order
     await order.save();
 
     return res.status(200).json({
@@ -668,39 +681,42 @@ exports.updateOrderByUserId = async (req, res) => {
       message: "Order updated successfully",
       data: order
     });
+
   } catch (error) {
-    console.error("updateOrderByUserId error:", error);
+    console.error("updateOrderByIdByUserId error:", error);
     return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
-
 // -------------------------
 // DELETE ORDER BY USER ID
 // -------------------------
 exports.deleteOrderByUserId = async (req, res) => {
   try {
-    const { userId, orderId } = req.params;
+    const { userId } = req.body;
+    const { orderId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Invalid userId" });
-    }
+    // 1. Validate IDs
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ success: false, message: "Invalid orderId" });
+      return res.status(400).json({ success: false, message: "Valid orderId is required." });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
 
+    // 2. Delete only if order belongs to user
     const order = await Order.findOneAndDelete({ _id: orderId, userId });
-
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found for this user" });
+      return res.status(404).json({ success: false, message: "Order not found for this user." });
     }
 
     return res.status(200).json({
       success: true,
       message: "Order deleted successfully",
-      deletedOrderId: orderId
+      data: { orderId: order._id }
     });
+
   } catch (error) {
-    console.error("deleteOrderByUserId error:", error);
+    console.error("deleteOrderByIdByUserId error:", error);
     return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -749,69 +765,100 @@ exports.assignDeliveryAndTrack = async (req, res) => {
 
 // ✅ GET: Today's Bookings by User
 exports.getTodaysBookingsByUserId = async (req, res) => {
-  // Define the helper function inside this method
-  const getTodayDateRange = () => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-
-    return { start, end };
-  };
-
   try {
     const { userId } = req.params;
 
+    // Validate userId
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Invalid userId" });
+      return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
 
-    const { start, end } = getTodayDateRange();
+    // Calculate start and end of today
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
 
+    // Fetch today's orders for this user
     const orders = await Order.find({
       userId,
-      createdAt: { $gte: start, $lte: end }
-    }).populate("restaurantId", "restaurantName locationName");
+      createdAt: { $gte: startOfDay, $lte: endOfDay }
+    })
+      .populate("restaurantId", "restaurantName locationName")
+      .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
-      message: `Today's bookings fetched successfully for user ${userId}`,
-      data: orders
+      message: "Today's bookings fetched successfully",
+      count: orders.length,
+      data: orders.map(order => ({
+        orderId: order._id,
+        totalItems: order.totalItems,
+        subTotal: order.subTotal,
+        deliveryCharge: order.deliveryCharge,
+        totalPayable: order.totalPayable,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
+        restaurantLocation: order.restaurantLocation,
+        restaurantDetails: order.restaurantId,
+        products: order.products,
+        createdAt: order.createdAt
+      }))
     });
+
   } catch (error) {
     console.error("getTodaysBookingsByUserId error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
-
 // ✅ POST: Get Orders by Status
 exports.getOrdersByStatus = async (req, res) => {
   try {
-    const { orderStatus } = req.query; // <-- get from query params
+    const { userId, status } = req.params;
 
-    const validStatuses = ["Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"];
-    if (!validStatuses.includes(orderStatus)) {
-      return res.status(400).json({ success: false, message: "Invalid order status" });
+    // Validate userId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
 
-    const orders = await Order.find({ orderStatus }).populate("restaurantId", "restaurantName locationName");
+    // Validate status if provided
+    const validStatuses = ["Pending", "Confirmed", "Delivered", "Cancelled"];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid order status." });
+    }
+
+    // Build filter
+    const filter = { userId };
+    if (status) filter.orderStatus = status;
+
+    // Fetch orders
+    const orders = await Order.find(filter)
+      .populate("restaurantId", "restaurantName locationName")
+      .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
-      message: `Orders with status "${orderStatus}" fetched successfully`,
-      data: orders
+      message: "Orders fetched successfully",
+      count: orders.length,
+      data: orders.map(order => ({
+        orderId: order._id,
+        totalItems: order.totalItems,
+        subTotal: order.subTotal,
+        deliveryCharge: order.deliveryCharge,
+        totalPayable: order.totalPayable,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
+        restaurantLocation: order.restaurantLocation,
+        restaurantDetails: order.restaurantId,
+        products: order.products,
+        createdAt: order.createdAt
+      }))
     });
+
   } catch (error) {
     console.error("getOrdersByStatus error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };

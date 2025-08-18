@@ -52,9 +52,9 @@ router.delete('/users/:userId/profile-image', deleteProfileImage);
 
 
 // ➕ Add address
-router.post("/users/:userId/address", addAddress);
+router.post("/user/:userId/address", addAddress);
 // Get all addresses for a user
-router.get('/users/:userId/addresses', getAllAddresses);
+router.get('/user/:userId/addresses', getAllAddresses);
 
 // Get a single address by addressId for a user
 router.get('/users/:userId/addresses/:addressId', getAddressById);

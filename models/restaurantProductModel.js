@@ -8,7 +8,6 @@ const RestaurantProductSchema = new mongoose.Schema({
   rating: { type: Number, default: 0 },
   viewCount: { type: Number, default: 0 },
 
-  // Recommended products
   recommended: [{
     name: { type: String },
     price: { type: Number },
@@ -19,48 +18,28 @@ const RestaurantProductSchema = new mongoose.Schema({
     vendorHalfPercentage: { type: Number },
     vendor_Platecost: { type: Number },
 
-    // Optional Addons
     addons: {
       productName: { type: String },
-      variation: {
-        name: { type: String },
-        type: {
-          type: String,
-          enum: ["Full", "Half"],
-        },
-        price: { type: Number }
+      variation: {             // Single object
+        name: { type: String, default: "" },
+        type: { type: [String], default: [] } // e.g., ["Half"] or ["Full"]
       },
       plates: {
-        name: { type: String },
-        item: { type: Number },
-        platePrice: { type: Number },
-        totalPlatesPrice: { type: Number }
+        _id: false,
+        name: { type: String, default: "" }
       }
     },
 
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category"
-    },
+    }
   }],
 
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User"
-  },
-  restaurantId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Restaurant"
-  },
-  timeAndKm: {
-    time: { type: String },
-    distance: { type: String }
-  },
-  status: {
-    type: String,
-    enum: ["active", "inactive"],
-    default: "active"
-  }
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: "Restaurant" },
+  timeAndKm: { time: String, distance: String },
+  status: { type: String, enum: ["active", "inactive"], default: "active" }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

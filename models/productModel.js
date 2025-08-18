@@ -37,24 +37,17 @@ const productSchema = new mongoose.Schema({
   },
   vendorHalfPercentage: { type: Number },
   vendor_Platecost: { type: Number },
-  addons: {
-    productName: { type: String },
-    variation: {
-      name: { type: String },
-      type: {
-        type: String,
-        enum: ["Full", "Half"],
+addons: {
+      productName: { type: String },
+      variation: {             // Single object
+        name: { type: String, default: "" },
+        type: { type: [String], default: [] } // e.g., ["Half"] or ["Full"]
       },
-      
-      price: { type: Number } // Final price, computed during controller logic
+      plates: {
+        _id: false,
+        name: { type: String, default: "" }
+      }
     },
-    plates: {
-      name: { type: String },
-      item: { type: Number },
-      platePrice: { type: Number },
-      totalPlatesPrice: { type: Number }
-    }
-  },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

@@ -6,6 +6,7 @@ const cartSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
+
   products: [
     {
       restaurantProductId: {
@@ -23,25 +24,14 @@ const cartSchema = new mongoose.Schema({
         min: 1,
       },
 
-      name: { type: String },
-      basePrice: { type: Number, default: 0 },
-
-      // Snapshot addons object copied from RestaurantProduct.recommended.addons
-      addons: {
-        productName: { type: String },
-        variation: {
-          name: { type: String },
-          type: { type: String, enum: ["Full", "Half"], default: null },
-          price: { type: Number, default: 0 },
-        },
-        plates: {
-          name: { type: String },
-          item: { type: Number },
-          platePrice: { type: Number },
-          totalPlatesPrice: { type: Number, default: 0 },
-        },
+      // User's chosen addon (no price)
+      addOn: {
+        variation: { type: String }, // e.g. "Full" or "Half"
+        plateitems: { type: Number, default: 0 }, // e.g. 2 plates
       },
 
+      name: { type: String },
+      basePrice: { type: Number, default: 0 }, // backend sets this automatically
       image: { type: String },
     },
   ],
