@@ -8,6 +8,8 @@ router.get("/restaurant-products", controller.getAllRestaurantProducts);
 router.get("/restaurant-products/:productId", controller.getByrestaurantProductId);
 router.get("/restaurant-products/user/:userId", controller.getCartByUserId);
 router.get("/restaurant-product/:categoryId", controller.getRestaurantProductsByCategoryId);
+router.get("/restaurant-products/:restaurantId", controller.getRecommendedByRestaurantId);
+
 router.put("/restaurant-product/:productId", multiUpload, controller.updateRestaurantProduct );
 router.delete("/restaurant-product/:productId", controller.deleteRestaurantProduct);
 // Delete recommended item

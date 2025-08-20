@@ -1,21 +1,39 @@
 const mongoose = require('mongoose');
 const Cart = require('../models/cartModel');
 const RestaurantProduct = require('../models/restaurantProductModel');
+const Restaurant = require('../models/restaurantModel');
+const User = require('../models/userModel'); // <-- make sure this is here
 
+    
+// Haversine formula to calculate distance in km (with meters in decimal)
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+    const toRad = (val) => (val * Math.PI) / 180;
+    const R = 6371; // Earth's radius in km
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+// Add or update cart
 exports.addToCart = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { products, clearExisting = false } = req.body;
+        const { products } = req.body;
 
-        // Validate inputs
-        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId))
             return res.status(400).json({ success: false, message: "Valid userId is required." });
-        }
-        if (!products || !Array.isArray(products)) {
+        if (!products || !Array.isArray(products))
             return res.status(400).json({ success: false, message: "Products array is required." });
-        }
 
-        // Load or initialize user's cart
+        const user = await User.findById(userId);
+        if (!user || !user.location || !user.location.coordinates)
+            return res.status(400).json({ success: false, message: "User location not found." });
+        const [userLon, userLat] = user.location.coordinates;
+
+        // Load or create cart
         let cart = await Cart.findOne({ userId });
         if (!cart) {
             cart = new Cart({
@@ -28,185 +46,119 @@ exports.addToCart = async (req, res) => {
             });
         }
 
-        // Clear existing cart if requested
-        if (clearExisting) {
-            cart.products = [];
-            cart.subTotal = 0;
-            cart.totalItems = 0;
-        }
+        let restaurantId = cart.restaurantId;
 
-        // Process each product in input
         for (const item of products) {
-            const { restaurantProductId, recommendedId, addOn, quantity = 1, operation = 'add' } = item;
+            const { restaurantProductId, recommendedId, addOn, quantity = 1 } = item;
 
-            // Skip if quantity is zero
-            if (quantity === 0) continue;
-
-            // Validate product IDs
-            if (!mongoose.Types.ObjectId.isValid(restaurantProductId) ||
-                !mongoose.Types.ObjectId.isValid(recommendedId)) {
+            if (!mongoose.Types.ObjectId.isValid(restaurantProductId) || !mongoose.Types.ObjectId.isValid(recommendedId))
                 return res.status(400).json({ success: false, message: "Invalid product IDs." });
-            }
 
-            // Fetch product details
             const restaurantProduct = await RestaurantProduct.findById(restaurantProductId);
-            if (!restaurantProduct) {
-                return res.status(404).json({ success: false, message: "Restaurant product not found." });
-            }
+            if (!restaurantProduct) return res.status(404).json({ success: false, message: "Restaurant product not found." });
 
             const recommendedItem = restaurantProduct.recommended.id(recommendedId);
-            if (!recommendedItem) {
-                return res.status(404).json({ success: false, message: "Recommended item not found." });
-            }
+            if (!recommendedItem) return res.status(404).json({ success: false, message: "Recommended item not found." });
 
-            // Check if the product has addons defined
-            const hasAddons = recommendedItem.addons &&
-                (recommendedItem.addons.variation || recommendedItem.addons.plates);
+            if (!restaurantId) restaurantId = restaurantProduct.restaurantId;
 
-            // Initialize clean addOn object and calculate price
-            const addOnClean = {};
+            // Base price
             let unitPrice = recommendedItem.price || 0;
 
-            // Process addons if they exist and are provided
-            if (hasAddons && addOn) {
-                // Handle variation (half/full)
-                if (recommendedItem.addons.variation && recommendedItem.addons.variation.type.includes("Half")) {
-                    if (addOn.variation === "Half") {
-                        addOnClean.variation = "Half";
-                        unitPrice = recommendedItem.calculatedPrice?.half ||
-                            Math.round(unitPrice * (recommendedItem.vendorHalfPercentage / 100));
-                    }
-                }
+            // Plate price separately (per product, not multiplied by quantity)
+            let platePrice = 0;
 
-                // Handle plates
-                if (recommendedItem.addons.plates && addOn.plateitems && addOn.plateitems > 0) {
+            const addOnClean = {};
+            const hasAddons = recommendedItem.addons && (recommendedItem.addons.variation || recommendedItem.addons.plates);
+
+            if (hasAddons && addOn) {
+                if (recommendedItem.addons.variation && recommendedItem.addons.variation.type.includes("Half") && addOn.variation === "Half") {
+                    addOnClean.variation = "Half";
+                    unitPrice = recommendedItem.calculatedPrice?.half || Math.round(unitPrice * (recommendedItem.vendorHalfPercentage / 100));
+                }
+                if (recommendedItem.addons.plates && addOn.plateitems > 0) {
                     addOnClean.plateitems = addOn.plateitems;
-                    const plateCost = addOn.plateitems * (recommendedItem.vendor_Platecost || 0);
-                    unitPrice += plateCost;
+                    platePrice = addOn.plateitems * (recommendedItem.vendor_Platecost || 0);
                 }
             }
 
-            // Prepare product data
             const productData = {
                 restaurantProductId,
                 recommendedId,
-                quantity: Math.abs(quantity), // Ensure quantity is positive
+                quantity: Math.abs(quantity),
                 name: recommendedItem.name,
                 basePrice: unitPrice,
+                platePrice: platePrice,
                 image: recommendedItem.image || ""
             };
+            if (hasAddons && Object.keys(addOnClean).length > 0) productData.addOn = addOnClean;
 
-            // Include addOn only if supported by the product
-            if (hasAddons && Object.keys(addOnClean).length > 0) {
-                productData.addOn = addOnClean;
-            }
-
-            // Find existing product in cart
             const existingIndex = cart.products.findIndex(
                 p => p.restaurantProductId.toString() === restaurantProductId &&
-                    p.recommendedId.toString() === recommendedId
+                     p.recommendedId.toString() === recommendedId
             );
 
-            // Handle different operations
+            // Increment/decrement quantity
             if (existingIndex !== -1) {
-                if (operation === 'remove') {
-                    // Remove the item completely
+                const newQuantity = cart.products[existingIndex].quantity + quantity;
+                if (newQuantity <= 0) {
                     cart.products.splice(existingIndex, 1);
                 } else {
-                    // Handle quantity changes
-                    const newQuantity = cart.products[existingIndex].quantity + quantity;
-
-                    if (newQuantity <= 0) {
-                        // Remove item if quantity would be zero or negative
-                        cart.products.splice(existingIndex, 1);
-                    } else {
-                        // Update the existing item
-                        cart.products[existingIndex].quantity = newQuantity;
-                        // Update other fields if provided
-                        if (productData.addOn) {
-                            cart.products[existingIndex].addOn = productData.addOn;
-                        }
-                        cart.products[existingIndex].basePrice = unitPrice;
-                    }
+                    cart.products[existingIndex].quantity = newQuantity;
+                    cart.products[existingIndex].basePrice = unitPrice;
+                    cart.products[existingIndex].platePrice = platePrice;
+                    if (productData.addOn) cart.products[existingIndex].addOn = productData.addOn;
                 }
-            } else if (operation !== 'remove' && quantity > 0) {
-                // Add new item (only if quantity is positive and not a remove operation)
+            } else if (quantity > 0) {
                 cart.products.push(productData);
             }
         }
 
-        // Recalculate cart totals
+        cart.restaurantId = restaurantId;
+
+        // Recalculate totals
         let subTotal = 0;
         let totalItems = 0;
+        let distanceKm = 0;
 
         for (const prod of cart.products) {
-            const restaurantProduct = await RestaurantProduct.findById(prod.restaurantProductId);
-            const recommendedItem = restaurantProduct?.recommended.id(prod.recommendedId);
-            if (!recommendedItem) continue;
-
-            // Recalculate price to ensure consistency
-            let unitPrice = recommendedItem.price || 0;
-            const hasAddons = recommendedItem.addons &&
-                (recommendedItem.addons.variation || recommendedItem.addons.plates);
-            const addOnClean = {};
-
-            if (hasAddons && prod.addOn) {
-                // Handle variation
-                if (recommendedItem.addons.variation && recommendedItem.addons.variation.type.includes("Half")) {
-                    if (prod.addOn.variation === "Half") {
-                        addOnClean.variation = "Half";
-                        unitPrice = recommendedItem.calculatedPrice?.half ||
-                            Math.round(unitPrice * (recommendedItem.vendorHalfPercentage / 100));
-                    }
-                }
-
-                // Handle plates
-                if (recommendedItem.addons.plates && prod.addOn.plateitems && prod.addOn.plateitems > 0) {
-                    addOnClean.plateitems = prod.addOn.plateitems;
-                    const plateCost = prod.addOn.plateitems * (recommendedItem.vendor_Platecost || 0);
-                    unitPrice += plateCost;
-                }
-            }
-
-            // Update totals
-            subTotal += unitPrice * prod.quantity;
+            subTotal += (prod.basePrice * prod.quantity) + (prod.platePrice || 0);
             totalItems += prod.quantity;
+        }
 
-            // Update product details
-            prod.basePrice = unitPrice;
-            prod.name = recommendedItem.name;
-            prod.image = recommendedItem.image || "";
-
-            // Only keep addOn if the product supports it
-            if (hasAddons && Object.keys(addOnClean).length > 0) {
-                prod.addOn = addOnClean;
+        let deliveryCharge = 0;
+        if (restaurantId && totalItems > 0) {
+            const restaurant = await Restaurant.findById(restaurantId);
+            if (restaurant && restaurant.location && restaurant.location.coordinates) {
+                const [restLon, restLat] = restaurant.location.coordinates;
+                distanceKm = calculateDistanceKm(userLat, userLon, restLat, restLon);
+                deliveryCharge = distanceKm <= 5 ? 20 : 20 + 2 * Math.ceil(distanceKm - 5);
             } else {
-                delete prod.addOn;
+                deliveryCharge = 20;
             }
         }
 
-        // Update cart totals
         cart.subTotal = subTotal;
         cart.totalItems = totalItems;
-        cart.deliveryCharge = totalItems === 0 ? 0 : 20;
-        cart.finalAmount = subTotal + cart.deliveryCharge;
+        cart.deliveryCharge = totalItems === 0 ? 0 : deliveryCharge;
+        cart.finalAmount = cart.subTotal + cart.deliveryCharge;
 
         await cart.save();
+
         return res.status(200).json({
             success: true,
             message: "Cart updated successfully",
+            distanceKm: parseFloat(distanceKm.toFixed(3)),
             cart
         });
 
     } catch (err) {
         console.error("Cart Operation Error:", err);
-        return res.status(500).json({
-            success: false,
-            message: "Server error",
-            error: err.message
-        });
+        return res.status(500).json({ success: false, message: "Server error", error: err.message });
     }
 };
+
+
 // Get all carts
 exports.getAllCarts = async (req, res) => {
     try {
@@ -269,6 +221,9 @@ exports.getCartByUserId = async (req, res) => {
         });
     }
 };
+
+
+
 
 
 // Delete cart by user ID

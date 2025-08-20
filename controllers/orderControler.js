@@ -5,10 +5,22 @@ const User = require("../models/userModel");
 const Cart = require("../models/cartModel");
 const Restaurant = require("../models/restaurantModel");
 const cloudinary = require('../config/cloudinary');
+const DeliveryBoy = require("../models/deliveryBoyModel");
 const mongoose = require("mongoose");
 const fs = require("fs");
 
-
+// Haversine formula to calculate distance in km
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  const toRad = (val) => (val * Math.PI) / 180;
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
 // Haversine formula for distance
 const calculateDistance = (coord1, coord2) => {
@@ -440,155 +452,111 @@ exports.removeFromWishlist = async (req, res) => {
 
 // Create Order
 exports.createOrder = async (req, res) => {
-    try {
-    const { userId, cartId, restaurantId, paymentMethod, paymentStatus } = req.body;
+   try {
+        const { userId, cartId, restaurantId, paymentMethod, paymentStatus } = req.body;
 
-    // 1. Validate IDs and inputs
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Valid userId is required." });
-    }
-    if (!mongoose.Types.ObjectId.isValid(cartId)) {
-      return res.status(400).json({ success: false, message: "Valid cartId is required." });
-    }
-    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
-      return res.status(400).json({ success: false, message: "Valid restaurantId is required." });
-    }
-    if (!["COD", "Online"].includes(paymentMethod)) {
-      return res.status(400).json({ success: false, message: "Invalid payment method." });
-    }
-    if (paymentStatus && !["Pending", "Paid", "Failed"].includes(paymentStatus)) {
-      return res.status(400).json({ success: false, message: "Invalid payment status." });
-    }
+        if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ success: false, message: "Valid userId is required." });
+        if (!mongoose.Types.ObjectId.isValid(cartId)) return res.status(400).json({ success: false, message: "Valid cartId is required." });
+        if (!mongoose.Types.ObjectId.isValid(restaurantId)) return res.status(400).json({ success: false, message: "Valid restaurantId is required." });
+        if (!["COD", "Online"].includes(paymentMethod)) return res.status(400).json({ success: false, message: "Invalid payment method." });
 
-    // 2. Fetch cart
-    const cart = await Cart.findById(cartId);
-    if (!cart) {
-      return res.status(404).json({ success: false, message: "Cart not found." });
-    }
-    if (cart.userId.toString() !== userId) {
-      return res.status(400).json({ success: false, message: "Cart does not belong to user." });
-    }
+        const cart = await Cart.findById(cartId);
+        if (!cart) return res.status(404).json({ success: false, message: "Cart not found." });
+        if (cart.userId.toString() !== userId) return res.status(400).json({ success: false, message: "Cart does not belong to user." });
 
-    // 3. Get restaurant location
-    const restaurant = await Restaurant.findById(restaurantId, "locationName restaurantName");
-    if (!restaurant) {
-      return res.status(404).json({ success: false, message: "Restaurant not found." });
-    }
+        const restaurant = await Restaurant.findById(restaurantId, "locationName restaurantName location");
+        if (!restaurant) return res.status(404).json({ success: false, message: "Restaurant not found." });
 
-    // 4. Get user delivery address (MANDATORY from user profile only)
-    const user = await User.findById(userId, "address");
-    let deliveryAddress = {};
-    if (user && user.address && user.address.length > 0) {
-      deliveryAddress = user.address[0];   // Always take the first address from user
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: "User does not have a saved delivery address."
-      });
-    }
-
-    // 5. Recalculate products to ensure consistent pricing
-    let subTotal = 0;
-    let totalItems = 0;
-    const cleanProducts = [];
-
-    for (const prod of cart.products) {
-      const restaurantProduct = await RestaurantProduct.findById(prod.restaurantProductId);
-      const recommendedItem = restaurantProduct?.recommended.id(prod.recommendedId);
-      if (!recommendedItem) continue;
-
-      let unitPrice = recommendedItem.price || 0;
-      const hasAddons = recommendedItem.addons &&
-                        (recommendedItem.addons.variation || recommendedItem.addons.plates);
-      const addOnClean = {};
-
-      // Handle addons (Half variation + Plate cost)
-      if (hasAddons && prod.addOn) {
-        if (recommendedItem.addons.variation && recommendedItem.addons.variation.type.includes("Half")) {
-          if (prod.addOn.variation === "Half") {
-            addOnClean.variation = "Half";
-            unitPrice = recommendedItem.calculatedPrice?.half ||
-                        Math.round(unitPrice * (recommendedItem.vendorHalfPercentage / 100));
-          }
+        const user = await User.findById(userId, "address location");
+        if (!user || !user.address || user.address.length === 0 || !user.location || !user.location.coordinates) {
+            return res.status(400).json({ success: false, message: "User location or address not found." });
         }
-        if (recommendedItem.addons.plates && prod.addOn.plateitems && prod.addOn.plateitems > 0) {
-          addOnClean.plateitems = prod.addOn.plateitems;
-          const plateCost = prod.addOn.plateitems * (recommendedItem.vendor_Platecost || 0);
-          unitPrice += plateCost;
+
+        // Coordinates
+        const [userLon, userLat] = user.location.coordinates;
+        const [restLon, restLat] = restaurant.location.coordinates;
+
+        // Distance in km
+        const distanceKm = parseFloat(calculateDistanceKm(userLat, userLon, restLat, restLon).toFixed(3));
+
+        // Recalculate products
+        let subTotal = 0;
+        let totalItems = 0;
+        const cleanProducts = [];
+
+        for (const prod of cart.products) {
+            const restaurantProduct = await RestaurantProduct.findById(prod.restaurantProductId);
+            const recommendedItem = restaurantProduct?.recommended.id(prod.recommendedId);
+            if (!recommendedItem) continue;
+
+            let unitPrice = recommendedItem.price || 0;
+            const addOnClean = {};
+
+            if (recommendedItem.addons && prod.addOn) {
+                if (recommendedItem.addons.variation?.type.includes("Half") && prod.addOn.variation === "Half") {
+                    addOnClean.variation = "Half";
+                    unitPrice = recommendedItem.calculatedPrice?.half || Math.round(unitPrice * (recommendedItem.vendorHalfPercentage / 100));
+                }
+                if (recommendedItem.addons.plates && prod.addOn.plateitems > 0) {
+                    addOnClean.plateitems = prod.addOn.plateitems;
+                    const plateCost = prod.addOn.plateitems * (recommendedItem.vendor_Platecost || 0);
+                    unitPrice += plateCost;
+                }
+            }
+
+            subTotal += unitPrice * prod.quantity;
+            totalItems += prod.quantity;
+
+            cleanProducts.push({
+                restaurantProductId: prod.restaurantProductId,
+                recommendedId: prod.recommendedId,
+                quantity: prod.quantity,
+                name: recommendedItem.name,
+                basePrice: unitPrice,
+                image: recommendedItem.image || "",
+                ...(Object.keys(addOnClean).length > 0 ? { addOn: addOnClean } : {})
+            });
         }
-      }
 
-      // Update totals
-      subTotal += unitPrice * prod.quantity;
-      totalItems += prod.quantity;
+        // Delivery charge based on distance
+        let deliveryCharge = distanceKm <= 5 ? 20 : 20 + 2 * Math.ceil(distanceKm - 5);
+        if (totalItems === 0) deliveryCharge = 0;
 
-      cleanProducts.push({
-        restaurantProductId: prod.restaurantProductId,
-        recommendedId: prod.recommendedId,
-        quantity: prod.quantity,
-        name: recommendedItem.name,
-        basePrice: unitPrice,
-        image: recommendedItem.image || "",
-        ...(hasAddons && Object.keys(addOnClean).length > 0 ? { addOn: addOnClean } : {})
-      });
+        const totalPayable = subTotal + deliveryCharge;
+
+        // Prepare order
+        let orderData = {
+            userId,
+            cartId,
+            restaurantId,
+            restaurantLocation: restaurant.locationName || "",
+            deliveryAddress: user.address[0],
+            paymentMethod,
+            paymentStatus: paymentStatus || "Pending",
+            orderStatus: "Pending",
+            totalItems,
+            subTotal,
+            deliveryCharge,
+            totalPayable,
+            products: cleanProducts,
+            distanceKm
+        };
+
+        let order = await Order.create(orderData);
+        order = await Order.findById(order._id).populate("restaurantId", "restaurantName locationName");
+
+        const message = paymentStatus === "Paid" ? "Payment is successful" : "Order created successfully";
+
+        return res.status(201).json({
+            success: true,
+            message,
+            data: order
+        });
+
+    } catch (error) {
+        console.error("createOrder error:", error);
+        return res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
-
-    // Delivery charge and final amount
-    const deliveryCharge = totalItems === 0 ? 0 : 20;
-    const totalPayable = subTotal + deliveryCharge;
-
-    // 6. Prepare order data
-    const orderData = {
-      userId,
-      cartId,
-      restaurantId,
-      restaurantLocation: restaurant.locationName || "",
-      deliveryAddress,  // always from user profile
-      paymentMethod,
-      paymentStatus: paymentStatus || "Pending",
-      orderStatus: "Pending",
-      totalItems,
-      subTotal,
-      deliveryCharge,
-      totalPayable,
-      products: cleanProducts
-    };
-
-    // 7. Save order
-    let order = await Order.create(orderData);
-
-    // 8. Populate restaurant details for response
-    order = await Order.findById(order._id)
-      .populate("restaurantId", "restaurantName locationName");
-
-    let message = "Order created successfully";
-    if (paymentStatus === "Paid") {
-      message = "Payment is successful";
-    }
-
-    return res.status(201).json({
-      success: true,
-      message,
-      data: {
-        orderId: order._id,
-        totalItems: order.totalItems,
-        subTotal: order.subTotal,
-        deliveryCharge: order.deliveryCharge,
-        totalPayable: order.totalPayable,
-        paymentMethod: order.paymentMethod,
-        paymentStatus: order.paymentStatus,
-        orderStatus: order.orderStatus,
-        restaurantLocation: order.restaurantLocation,
-        deliveryAddress: order.deliveryAddress,   // <-- added to response
-        restaurantDetails: order.restaurantId,
-        products: order.products
-      }
-    });
-
-  } catch (error) {
-    console.error("createOrder error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
 };
 // -------------------------
 // GET ALL ORDERS
@@ -596,14 +564,12 @@ exports.createOrder = async (req, res) => {
 
 exports.getAllOrders = async (req, res) => {
     try {
-    const orders = await Order.find()
-      .populate("restaurantId", "restaurantName locationName")
-      .populate("userId", "firstName lastName phoneNumber");
-    return res.status(200).json({ success: true, count: orders.length, data: orders });
-  } catch (error) {
-    console.error("getAllOrders error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
+        const orders = await Order.find().populate("restaurantId", "restaurantName locationName");
+        return res.status(200).json({ success: true, data: orders });
+    } catch (error) {
+        console.error("getAllOrders error:", error);
+        return res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
 };
 
 // -------------------------
@@ -611,36 +577,41 @@ exports.getAllOrders = async (req, res) => {
 // -------------------------
 exports.getOrderById = async (req, res) => {
   try {
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: "Valid orderId is required." });
+        const { orderId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(orderId))
+            return res.status(400).json({ success: false, message: "Valid orderId is required." });
+
+        let order = await Order.findById(orderId)
+            .populate("restaurantId", "restaurantName locationName")
+            .populate("userId", "fullName mobileNumber"); // optional user info
+
+        if (!order)
+            return res.status(404).json({ success: false, message: "Order not found." });
+
+        return res.status(200).json({
+            success: true,
+            message: "Order fetched successfully",
+            data: order
+        });
+
+    } catch (error) {
+        console.error("getOrderById error:", error);
+        return res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
-    const order = await Order.findById(id)
-      .populate("restaurantId", "restaurantName locationName")
-      .populate("userId", "firstName lastName phoneNumber");
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found." });
-    }
-    return res.status(200).json({ success: true, data: order });
-  } catch (error) {
-    console.error("getOrderById error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
 };
 
 exports.getOrdersByUserId = async (req, res) => {
-   try {
-    const { userId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Valid userId is required." });
+     try {
+        const { userId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ success: false, message: "Valid userId is required." });
+
+        const orders = await Order.find({ userId }).populate("restaurantId", "restaurantName locationName");
+        return res.status(200).json({ success: true, data: orders });
+    } catch (error) {
+        console.error("getOrderByUserId error:", error);
+        return res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
-    const orders = await Order.find({ userId })
-      .populate("restaurantId", "restaurantName locationName");
-    return res.status(200).json({ success: true, count: orders.length, data: orders });
-  } catch (error) {
-    console.error("getOrdersByUserId error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
 };
 
 // -------------------------
@@ -648,77 +619,77 @@ exports.getOrdersByUserId = async (req, res) => {
 // -------------------------
 exports.updateOrderByUserId = async (req, res) => {
   try {
-    const { userId } = req.body;
-    const { orderId } = req.params;
+        const { userId } = req.body;
+        const { orderId } = req.params;
+        const updateFields = req.body.update || {}; // fields to update
 
-    // 1. Validate IDs
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ success: false, message: "Valid orderId is required." });
+        if (!mongoose.Types.ObjectId.isValid(userId))
+            return res.status(400).json({ success: false, message: "Valid userId is required." });
+
+        if (!mongoose.Types.ObjectId.isValid(orderId))
+            return res.status(400).json({ success: false, message: "Valid orderId is required." });
+
+        let order = await Order.findById(orderId);
+        if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+
+        if (order.userId.toString() !== userId)
+            return res.status(403).json({ success: false, message: "You are not authorized to update this order." });
+
+        // Allowed fields to update (optional: add more fields if needed)
+        const allowedFields = ["paymentStatus", "orderStatus", "paymentMethod"];
+        for (const key of allowedFields) {
+            if (updateFields[key] !== undefined) {
+                order[key] = updateFields[key];
+            }
+        }
+
+        await order.save();
+
+        order = await Order.findById(order._id)
+            .populate("restaurantId", "restaurantName locationName");
+
+        return res.status(200).json({
+            success: true,
+            message: "Order updated successfully",
+            data: order
+        });
+
+    } catch (error) {
+        console.error("updateOrderByUserId error:", error);
+        return res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Valid userId is required." });
-    }
-
-    // 2. Find the order
-    const order = await Order.findOne({ _id: orderId, userId });
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found for this user." });
-    }
-
-    // 3. Apply updates (only allow certain fields)
-    const allowedUpdates = ["paymentStatus", "orderStatus", "deliveryAddress"];
-    allowedUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        order[field] = req.body[field];
-      }
-    });
-
-    // 4. Save updated order
-    await order.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Order updated successfully",
-      data: order
-    });
-
-  } catch (error) {
-    console.error("updateOrderByIdByUserId error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
 };
 // -------------------------
 // DELETE ORDER BY USER ID
 // -------------------------
 exports.deleteOrderByUserId = async (req, res) => {
   try {
-    const { userId } = req.body;
-    const { orderId } = req.params;
+        const { userId } = req.body;
+        const { orderId } = req.params;
 
-    // 1. Validate IDs
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ success: false, message: "Valid orderId is required." });
+        if (!mongoose.Types.ObjectId.isValid(userId))
+            return res.status(400).json({ success: false, message: "Valid userId is required." });
+
+        if (!mongoose.Types.ObjectId.isValid(orderId))
+            return res.status(400).json({ success: false, message: "Valid orderId is required." });
+
+        const order = await Order.findById(orderId);
+        if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+
+        if (order.userId.toString() !== userId)
+            return res.status(403).json({ success: false, message: "You are not authorized to delete this order." });
+
+        await order.deleteOne();
+
+        return res.status(200).json({
+            success: true,
+            message: "Order deleted successfully"
+        });
+
+    } catch (error) {
+        console.error("deleteOrderByUserId error:", error);
+        return res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Valid userId is required." });
-    }
-
-    // 2. Delete only if order belongs to user
-    const order = await Order.findOneAndDelete({ _id: orderId, userId });
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found for this user." });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Order deleted successfully",
-      data: { orderId: order._id }
-    });
-
-  } catch (error) {
-    console.error("deleteOrderByIdByUserId error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
 };
 // Vendor accept order
 exports.vendorAcceptOrder = async (req, res) => {

@@ -13,8 +13,6 @@ router.get('/cart', cartController.getAllCarts);
 // Get cart by user ID
 router.get('/cart/user/:userId', cartController.getCartByUserId);
 
-
-
 // Delete cart by user ID
 router.delete('/cart/:userId', cartController.deleteCartByUserId);
 

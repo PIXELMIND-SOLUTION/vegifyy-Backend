@@ -50,12 +50,14 @@ const orderSchema = new mongoose.Schema(
     },
     deliveryCharge: {
       type: Number,
-      default: 0
+      default: 20
     },
     totalPayable: {
       type: Number,
       default: 0
-    }
+    }, 
+    distanceKm: { type: Number, default: 0 },
+   
   },
   {
     timestamps: true

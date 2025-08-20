@@ -6,7 +6,11 @@ const cartSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
-
+    restaurantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Restaurant",
+    required: true, // One cart tied to one restaurant
+  },
   products: [
     {
       restaurantProductId: {
@@ -32,6 +36,7 @@ const cartSchema = new mongoose.Schema({
 
       name: { type: String },
       basePrice: { type: Number, default: 0 }, // backend sets this automatically
+      platePrice: { type: Number, default: 0 },
       image: { type: String },
     },
   ],
