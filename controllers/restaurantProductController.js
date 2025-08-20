@@ -144,15 +144,15 @@ exports.getAllRestaurantProducts = async (req, res) => {
 // Get product by product ID
 exports.getByrestaurantProductId= async (req, res) => {
   try {
-    const { productId } = req.params;  // Ensure your route uses /:productId
+    const { Id } = req.params;  // Ensure your route uses /:productId
 
     // Validate ID
-    if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+    if (!Id || !mongoose.Types.ObjectId.isValid(Id)) {
       return res.status(400).json({ success: false, message: "Valid productId is required." });
     }
 
     // Fetch product and populate category if needed
-    const product = await RestaurantProduct.findById(productId)
+    const product = await RestaurantProduct.findById(Id)
       .populate("recommended.category")  // populate category inside recommended
       .populate("user", "firstName lastName email") // optional user fields
       .populate("restaurantId", "restaurantName locationName rating"); // optional restaurant fields
