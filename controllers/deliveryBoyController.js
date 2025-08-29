@@ -360,7 +360,7 @@ exports.assignOrder = async (req, res) => {
 };
 
 exports.acceptOrder = async (req, res) => {
-  try {
+ try {
     const { assignmentId } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(assignmentId))
@@ -378,7 +378,7 @@ exports.acceptOrder = async (req, res) => {
     const order = await Order.findById(assignment.orderId)
       .populate({
         path: "userId",
-        select: " location " // include address/location
+        select: "location" // include address/location
       })
       .populate({
         path: "restaurantId",
@@ -388,18 +388,23 @@ exports.acceptOrder = async (req, res) => {
 
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
 
-    // Store full details in assignment
+    // Accept the assignment for this delivery boy
     assignment.status = "Accepted";
     assignment.acceptedAt = new Date();
-    assignment.orderDetails = order;            // full order info including items
-    assignment.userDetails = order.userId;     // user info + address
+    assignment.orderDetails = order;               // full order info including items
+    assignment.userDetails = order.userId;        // user info + address
     assignment.restaurantDetails = order.restaurantId; // restaurant info + address
-
     await assignment.save();
+
+    // Cancel all other delivery assignments for the same order
+    await DeliveryAssignment.updateMany(
+      { orderId: assignment.orderId, _id: { $ne: assignment._id }, status: "Pending" },
+      { $set: { status: "Canceled", canceledAt: new Date() } }
+    );
 
     return res.status(200).json({
       success: true,
-      message: "Order accepted successfully with full details stored",
+      message: "Order accepted successfully. Other pending assignments canceled.",
       data: assignment
     });
 
@@ -431,7 +436,7 @@ exports.assignDeliveryAndTrack = async (req, res) => {
     // Fetch active assignment
     const assignment = await DeliveryAssignment.findOne({
       deliveryBoyId,
-      status: { $in: ["Accepted", "Picked"] }
+      status: { $in: ["Accepted"] }
     }).populate("restaurantId userId");
 
     if (!assignment) {
@@ -464,6 +469,8 @@ exports.assignDeliveryAndTrack = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
+
+
 exports.updateDeliveryStatus = async (req, res) => {
   try {
     const { assignmentId, status } = req.body;

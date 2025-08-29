@@ -42,7 +42,13 @@ const deliveryAssignmentSchema = new mongoose.Schema({
   cancelledAt: Date,
   deliveredAt: Date,
 
-  orderDetails: { type: Object },       // Will store order info
+  orderDetails: { type: Object }, 
+  chat: [{ 
+    sender: { type: String, enum: ["User", "DeliveryBoy"], required: true },
+    message: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now }
+  }],
+  chatActive: { type: Boolean, default: false }      // Will store order info
   }, { timestamps: true });
 // Export both models
 module.exports = {

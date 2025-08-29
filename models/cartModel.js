@@ -6,7 +6,7 @@ const cartSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
-    restaurantId: {
+  restaurantId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Restaurant",
     required: true, // One cart tied to one restaurant
@@ -43,8 +43,17 @@ const cartSchema = new mongoose.Schema({
 
   subTotal: { type: Number, default: 0 },
   deliveryCharge: { type: Number, default: 20 },
+  couponDiscount: { type: Number, default: 0 },
   finalAmount: { type: Number, default: 0 },
   totalItems: { type: Number, default: 0 },
+  appliedCouponId: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon", default: null }, // <-- store coupon
+  appliedCoupon: { // new: store details snapshot
+        code: String,
+        discountPercentage: Number,
+        maxDiscountAmount: Number,
+        minCartAmount: Number,
+        expiresAt: Date
+    },
   createdAt: { type: Date, default: Date.now },
 });
 

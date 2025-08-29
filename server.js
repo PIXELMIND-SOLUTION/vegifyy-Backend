@@ -9,8 +9,8 @@ const routes = require("./routes/foodSystemRoute");
 const restaurantProduc = require("./routes/restaurantProductRoute");
 const categorieRestaurantProduct = require('./routes/categorieRestaurantProductRoutes');
 const cartController =require('./routes/cartRoute')
-const deliveyboyRoute=require('./routes/deliveryboyRoute')
-// const coupon =require('./routes/couponRoute')
+const deliveyboyRoute=require('./routes/deliveryboyRoute');
+const Admin =require('./routes/adminRoutes');
 
 
 dotenv.config();
@@ -43,7 +43,7 @@ app.use('/api',restaurantProduc);
 app.use('/api',categorieRestaurantProduct);
 app.use('/api',cartController);
 app.use('/api/delivery-boy',deliveyboyRoute);
-// app.use('/api',coupon);
+app.use('/api/admin',Admin);
 
 
 // Socket.IO connection

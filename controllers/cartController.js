@@ -3,7 +3,7 @@ const Cart = require('../models/cartModel');
 const RestaurantProduct = require('../models/restaurantProductModel');
 const Restaurant = require('../models/restaurantModel');
 const User = require('../models/userModel'); // <-- make sure this is here
-
+const Coupon = require('../models/couponModel'); // <-- ADD THIS
     
 // Haversine formula to calculate distance in km (with meters in decimal)
 function calculateDistanceKm(lat1, lon1, lat2, lon2) {
@@ -21,7 +21,7 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
 exports.addToCart = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { products } = req.body;
+        const { products, couponId } = req.body;
 
         if (!userId || !mongoose.Types.ObjectId.isValid(userId))
             return res.status(400).json({ success: false, message: "Valid userId is required." });
@@ -42,7 +42,9 @@ exports.addToCart = async (req, res) => {
                 subTotal: 0,
                 deliveryCharge: 0,
                 finalAmount: 0,
-                totalItems: 0
+                totalItems: 0,
+                couponDiscount: 0,
+                appliedCouponId: null
             });
         }
 
@@ -64,10 +66,7 @@ exports.addToCart = async (req, res) => {
 
             // Base price
             let unitPrice = recommendedItem.price || 0;
-
-            // Plate price separately (per product, not multiplied by quantity)
             let platePrice = 0;
-
             const addOnClean = {};
             const hasAddons = recommendedItem.addons && (recommendedItem.addons.variation || recommendedItem.addons.plates);
 
@@ -98,7 +97,6 @@ exports.addToCart = async (req, res) => {
                      p.recommendedId.toString() === recommendedId
             );
 
-            // Increment/decrement quantity
             if (existingIndex !== -1) {
                 const newQuantity = cart.products[existingIndex].quantity + quantity;
                 if (newQuantity <= 0) {
@@ -138,27 +136,63 @@ exports.addToCart = async (req, res) => {
             }
         }
 
-        cart.subTotal = subTotal;
-        cart.totalItems = totalItems;
-        cart.deliveryCharge = totalItems === 0 ? 0 : deliveryCharge;
-        cart.finalAmount = cart.subTotal + cart.deliveryCharge;
+        // Apply coupon
+let couponDiscount = 0;
+let appliedCoupon = null;
 
-        await cart.save();
+if (couponId && mongoose.Types.ObjectId.isValid(couponId)) {
+    const coupon = await Coupon.findById(couponId);
 
-        return res.status(200).json({
-            success: true,
-            message: "Cart updated successfully",
-            distanceKm: parseFloat(distanceKm.toFixed(3)),
-            cart
-        });
+    if (coupon && coupon.isActive) {
+        // Check if subtotal meets coupon minimum
+        if (subTotal >= (coupon.minCartAmount || 0)) {
+            couponDiscount = Math.floor((subTotal * coupon.discountPercentage) / 100);
+            if (coupon.maxDiscountAmount) {
+                couponDiscount = Math.min(couponDiscount, coupon.maxDiscountAmount);
+            }
+            appliedCoupon = coupon;
+        } else {
+            // Cart does not meet minimum for coupon, so discount = 0
+            couponDiscount = 0;
+            appliedCoupon = null;
+        }
+    }
+}
+
+// Update cart totals
+cart.subTotal = subTotal;
+cart.totalItems = totalItems;
+cart.deliveryCharge = totalItems === 0 ? 0 : deliveryCharge;
+cart.couponDiscount = couponDiscount;
+cart.appliedCouponId = appliedCoupon?._id || null;
+cart.finalAmount = cart.subTotal + cart.deliveryCharge - couponDiscount;
+
+await cart.save();
+
+// Response
+return res.status(200).json({
+    success: true,
+    message: "Cart updated successfully",
+    distanceKm: parseFloat(distanceKm.toFixed(3)),
+    cart,
+    appliedCoupon: appliedCoupon
+        ? {
+              _id: appliedCoupon._id,
+              code: appliedCoupon.code,
+              discountPercentage: appliedCoupon.discountPercentage,
+              maxDiscountAmount: appliedCoupon.maxDiscountAmount,
+              minCartAmount: appliedCoupon.minCartAmount,
+              expiresAt: appliedCoupon.expiresAt,
+          }
+        : null,
+    couponDiscount
+});
 
     } catch (err) {
         console.error("Cart Operation Error:", err);
         return res.status(500).json({ success: false, message: "Server error", error: err.message });
     }
 };
-
-
 // Get all carts
 exports.getAllCarts = async (req, res) => {
     try {

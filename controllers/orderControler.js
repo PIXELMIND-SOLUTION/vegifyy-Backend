@@ -455,14 +455,19 @@ exports.createOrder = async (req, res) => {
    try {
         const { userId, cartId, restaurantId, paymentMethod, paymentStatus } = req.body;
 
-        if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ success: false, message: "Valid userId is required." });
-        if (!mongoose.Types.ObjectId.isValid(cartId)) return res.status(400).json({ success: false, message: "Valid cartId is required." });
-        if (!mongoose.Types.ObjectId.isValid(restaurantId)) return res.status(400).json({ success: false, message: "Valid restaurantId is required." });
-        if (!["COD", "Online"].includes(paymentMethod)) return res.status(400).json({ success: false, message: "Invalid payment method." });
+        if (!mongoose.Types.ObjectId.isValid(userId)) 
+            return res.status(400).json({ success: false, message: "Valid userId is required." });
+        if (!mongoose.Types.ObjectId.isValid(cartId)) 
+            return res.status(400).json({ success: false, message: "Valid cartId is required." });
+        if (!mongoose.Types.ObjectId.isValid(restaurantId)) 
+            return res.status(400).json({ success: false, message: "Valid restaurantId is required." });
+        if (!["COD", "Online"].includes(paymentMethod)) 
+            return res.status(400).json({ success: false, message: "Invalid payment method." });
 
         const cart = await Cart.findById(cartId);
         if (!cart) return res.status(404).json({ success: false, message: "Cart not found." });
-        if (cart.userId.toString() !== userId) return res.status(400).json({ success: false, message: "Cart does not belong to user." });
+        if (cart.userId.toString() !== userId) 
+            return res.status(400).json({ success: false, message: "Cart does not belong to user." });
 
         const restaurant = await Restaurant.findById(restaurantId, "locationName restaurantName location");
         if (!restaurant) return res.status(404).json({ success: false, message: "Restaurant not found." });
@@ -479,7 +484,7 @@ exports.createOrder = async (req, res) => {
         // Distance in km
         const distanceKm = parseFloat(calculateDistanceKm(userLat, userLon, restLat, restLon).toFixed(3));
 
-        // Recalculate products
+        // Recalculate products from cart
         let subTotal = 0;
         let totalItems = 0;
         const cleanProducts = [];
@@ -522,7 +527,11 @@ exports.createOrder = async (req, res) => {
         let deliveryCharge = distanceKm <= 5 ? 20 : 20 + 2 * Math.ceil(distanceKm - 5);
         if (totalItems === 0) deliveryCharge = 0;
 
-        const totalPayable = subTotal + deliveryCharge;
+        // Apply coupon from cart
+        let couponDiscount = cart.couponDiscount || 0;
+        let appliedCoupon = cart.appliedCoupon || null;
+
+        const totalPayable = subTotal + deliveryCharge - couponDiscount;
 
         // Prepare order
         let orderData = {
@@ -537,6 +546,8 @@ exports.createOrder = async (req, res) => {
             totalItems,
             subTotal,
             deliveryCharge,
+            couponDiscount,
+            appliedCoupon,
             totalPayable,
             products: cleanProducts,
             distanceKm
