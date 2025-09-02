@@ -20,9 +20,9 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
-};
+}
 
-// Haversine formula for distance
+// Haversine formula using coordinate arrays
 const calculateDistance = (coord1, coord2) => {
   const toRad = (deg) => (deg * Math.PI) / 180;
   const [lng1, lat1] = coord1;
@@ -50,7 +50,7 @@ async function uploadFilesToCloudinary(files) {
 }
 
 exports.createProduct = async (req, res) => {
-   try {
+  try {
     const {
       description,
       contentname,
@@ -63,6 +63,8 @@ exports.createProduct = async (req, res) => {
       viewcount,
     } = req.body;
 
+    console.log("Incoming IDs:", { userId, RestaurantProductId });
+
     const vendorHalfPercentage = 50;
     const vendor_Platecost = 5;
 
@@ -71,9 +73,12 @@ exports.createProduct = async (req, res) => {
     const restaurantProduct = await RestaurantProduct.findById(RestaurantProductId).populate("restaurantId");
 
     if (!user || !restaurantProduct) {
+      console.error("User or RestaurantProduct not found:", { userId, RestaurantProductId, userFound: !!user, restaurantProductFound: !!restaurantProduct });
       return res.status(400).json({
         success: false,
-        message: "User or RestaurantProduct not found"
+        message: !user 
+          ? "User not found. Please verify userId." 
+          : "RestaurantProduct not found. Please verify RestaurantProductId."
       });
     }
 
@@ -84,6 +89,7 @@ exports.createProduct = async (req, res) => {
     }
 
     if (!recommendedItem) {
+      console.error("Recommended item not found in restaurant product:", { recommendedId });
       return res.status(400).json({
         success: false,
         message: "Recommended item not found in restaurant product"
@@ -242,32 +248,71 @@ exports.getAllProducts = async (req, res) => {
 // ✅ GET product by ID
 exports.getProductById = async (req, res) => {
   try {
-    const { productId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ success: false, message: "Invalid product ID" });
+    // Support both URL params and query params
+    const productId = req.params.productId || req.query.productId;
+    console.log("Looking for product ID:", productId);
+
+    if (!productId) {
+      return res.status(400).json({
+        success: false,
+        message: "Product ID is required",
+      });
     }
 
-    const product = await Product.findById(productId);
+    // Try ObjectId lookup first, then fallback to string lookup
+    let product;
+    if (mongoose.Types.ObjectId.isValid(productId)) {
+      product = await Product.findById(productId);
+    } else {
+      product = await Product.findOne({ _id: productId });
+    }
+
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
     }
 
-    res.status(200).json({
+    // Convert to plain object to safely modify
+    const productObj = product.toObject();
+
+    // Populate restaurantProduct data if required
+    if (productObj.restaurantProduct?.product) {
+      const restaurantProduct = await RestaurantProduct.findById(productObj.restaurantProduct.product)
+        .populate("restaurantId");
+
+      if (restaurantProduct) {
+        productObj.restaurantProductDetails = {
+          _id: restaurantProduct._id,
+          productName: restaurantProduct.name || "",
+          restaurantId: restaurantProduct.restaurantId?._id || null,
+          restaurantName: restaurantProduct.restaurantId?.name || "",
+          restaurantLocation: restaurantProduct.restaurantId?.location || null,
+        };
+      }
+    }
+
+    // Remove internal fields you don't want to expose
+    delete productObj.vendorHalfPercentage;
+    delete productObj.vendor_Platecost;
+    delete productObj.__v;
+
+    return res.status(200).json({
       success: true,
       message: "Product fetched successfully",
-      data: product,
+      data: productObj,
     });
-  } catch (error) {
-    console.error("❌ Get product by ID error:", error);
-    res.status(500).json({
+
+  } catch (err) {
+    console.error("❌ Get product by ID error:", err);
+    return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
+      error: err.message,
     });
   }
 };
-
-
 
 exports.updateProductById = async (req, res) => {
   try {
@@ -452,7 +497,7 @@ exports.removeFromWishlist = async (req, res) => {
 
 // Create Order
 exports.createOrder = async (req, res) => {
-   try {
+    try {
         const { userId, cartId, restaurantId, paymentMethod, paymentStatus } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(userId)) 
@@ -473,16 +518,26 @@ exports.createOrder = async (req, res) => {
         if (!restaurant) return res.status(404).json({ success: false, message: "Restaurant not found." });
 
         const user = await User.findById(userId, "address location");
-        if (!user || !user.address || user.address.length === 0 || !user.location || !user.location.coordinates) {
+        if (!user || !user.address || user.address.length === 0) {
             return res.status(400).json({ success: false, message: "User location or address not found." });
         }
 
-        // Coordinates
-        const [userLon, userLat] = user.location.coordinates;
-        const [restLon, restLat] = restaurant.location.coordinates;
+        // --- FIXED: Get user coordinates ---
+        let userCoordinates;
+        if (user.location && user.location.coordinates && user.location.coordinates.length === 2) {
+            userCoordinates = user.location.coordinates; // [lng, lat]
+        } else {
+            // fallback to first address
+            const addr = user.address[0];
+            userCoordinates = [addr.longitud, addr.latitud]; // [lng, lat]
+        }
+
+        const restaurantCoordinates = restaurant.location.coordinates; // [lng, lat]
 
         // Distance in km
-        const distanceKm = parseFloat(calculateDistanceKm(userLat, userLon, restLat, restLon).toFixed(3));
+        const distanceKm = parseFloat(
+            calculateDistance(userCoordinates, restaurantCoordinates).toFixed(3)
+        );
 
         // Recalculate products from cart
         let subTotal = 0;

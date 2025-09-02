@@ -194,19 +194,42 @@ exports.getCartByUserId = async (req, res) => {
 };
 // Get restaurant products by category ID
 exports.getRestaurantProductsByCategoryId = async (req, res) => {
-    try {
+     try {
     const { categoryId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(categoryId))
-      return res.status(400).json({ success: false, message: "Invalid category ID" });
 
-    const products = await RestaurantProduct.find({ "recommended.category": categoryId });
-    res.status(200).json({ success: true, data: products });
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({ success: false, message: "Invalid category ID" });
+    }
+
+    const objectIdCategory = new mongoose.Types.ObjectId(categoryId);
+
+    // Query using $elemMatch to ensure it checks inside the recommended array
+    const products = await RestaurantProduct.find({
+      recommended: {
+        $elemMatch: {
+          category: { $in: [objectIdCategory, categoryId] } // matches ObjectId or string
+        }
+      }
+    });
+
+    if (!products || products.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant Product not found."
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      count: products.length,
+      data: products
+    });
+
   } catch (error) {
     console.error("Get Products by Category ID Error:", error);
     res.status(500).json({ success: false, message: "Server Error", error: error.message });
   }
 };
-
 exports.getRecommendedByRestaurantId = async (req, res) => {
   try {
     const { restaurantId } = req.params;

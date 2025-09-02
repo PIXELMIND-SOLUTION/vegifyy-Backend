@@ -11,9 +11,9 @@ const upload = require("../utils/up2");
 
 
 // ---------- PRODUCT ROUTES ----------
-router.post('/product',upload, controller.createProduct);
+router.post('/products',upload, controller.createProduct);
 router.get('/products', controller.getAllProducts);
-router.get('/product/:id', controller.getProductById);
+router.get('/product/:productId', controller.getProductById);
 router.put('/product/:id', upload, controller.updateProductById);
 router.delete('/product/:id', controller.deleteProductById);
 
@@ -27,6 +27,7 @@ router.delete('/wishlist/:userId/:productId', controller.removeFromWishlist);
 // ---------- ORDER ROUTES ----------
 router.post('/order', controller.createOrder);
 router.get('/orders', controller.getAllOrders);
+router.get("/order/:orderId",controller.getOrderById);
 router.get('/orders/user/:userId', controller.getOrdersByUserId);
 router.put('/orders/:orderId', controller.updateOrderByUserId);
 router.delete('/orders/user/:userId/:orderId', controller.deleteOrderByUserId);

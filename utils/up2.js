@@ -28,6 +28,5 @@ const upload = multer({
 
 module.exports = upload.fields([
   { name: "productImages", maxCount: 5 },
-  { name: "reviewImages", maxCount: 5 },
-  { name: "addonImage", maxCount: 1 }
+  { name: "reviewImages", maxCount: 5 }
 ]);

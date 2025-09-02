@@ -201,12 +201,20 @@ const login = async (req, res) => {
 const sendForgotOtp = async (req, res) => {
   try {
     const { phoneNumber } = req.body;
+    console.log("Incoming phoneNumber:", phoneNumber);
+
     const user = await User.findOne({ phoneNumber });
-    if (!user) return res.status(404).json({ message: "User not found" });
+    console.log("User found:", user);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     const otp = '1234';
     tempForgotToken = generateTempToken({ phoneNumber, otp });
     return res.status(200).json({ message: "OTP sent ✅", otp });
   } catch (err) {
+    console.error("Error in sendForgotOtp:", err);
     return res.status(500).json({ message: "OTP send failed ❌", error: err.message });
   }
 };
