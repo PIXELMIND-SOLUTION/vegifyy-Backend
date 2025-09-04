@@ -76,20 +76,28 @@ addons: {
   reviews: [reviewSchema],
 
   // Restaurant Reference
-restaurantProduct: {
-  product: {
+  restaurantProduct: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'RestaurantProduct',
     required: true
   },
-  quantity: {
-    type: Number,
-   
+ restaurantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Restaurant'
   },
-  
-}
-}, {
-  timestamps: true
+  restaurantName: {
+    type: String
+  },
+  restaurantLocation: {
+    type: String
+  }
+
+},  {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
+
+
 
 module.exports = mongoose.model('Product', productSchema);

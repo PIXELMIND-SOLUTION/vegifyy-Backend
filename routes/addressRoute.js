@@ -13,7 +13,8 @@ const upload = require("../utils/up2");
 // ---------- PRODUCT ROUTES ----------
 router.post('/products',upload, controller.createProduct);
 router.get('/products', controller.getAllProducts);
-router.get('/product/:productId', controller.getProductById);
+router.get('/product/:id', controller.getProductById);
+router.get("/products/:restaurantId", controller.getProductsByRestaurantId);
 router.put('/product/:id', upload, controller.updateProductById);
 router.delete('/product/:id', controller.deleteProductById);
 
