@@ -58,6 +58,20 @@ const orderSchema = new mongoose.Schema(
       default: 0
     }, 
     distanceKm: { type: Number, default: 0 },
+     products: [
+      {
+        restaurantProductId: { type: mongoose.Schema.Types.ObjectId, ref: "RestaurantProduct" },
+        recommendedId: { type: mongoose.Schema.Types.ObjectId },
+        name: { type: String },
+        quantity: { type: Number },
+        basePrice: { type: Number },
+        images: [{ type: String }],                // <-- include images here
+        addons: { type: Object },                  // <-- include addons
+        vendorHalfPercentage: { type: Number },    // <-- optional if needed
+        vendor_Platecost: { type: Number },        // <-- optional if needed
+        calculatedPrice: { type: Object }          // <-- optional if needed
+      }
+    ]
    
   },
   {
