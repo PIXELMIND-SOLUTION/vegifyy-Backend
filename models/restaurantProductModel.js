@@ -9,6 +9,7 @@ const RestaurantProductSchema = new mongoose.Schema({
   viewCount: { type: Number, default: 0 },
 
   recommended: [{
+      _id: { type: mongoose.Schema.Types.ObjectId, auto: true }, // ← ensures recommendedId
     name: { type: String },
     price: { type: Number },
     rating: { type: Number, default: 0 },

@@ -231,7 +231,7 @@ exports.getRestaurantProductsByCategoryId = async (req, res) => {
   }
 };
 exports.getRecommendedByRestaurantId = async (req, res) => {
-  try {
+try {
     const { restaurantId } = req.params;
 
     // Validate restaurantId
@@ -245,52 +245,53 @@ exports.getRecommendedByRestaurantId = async (req, res) => {
       return res.status(404).json({ success: false, message: "Restaurant not found" });
     }
 
-    // Find all RestaurantProduct documents for this restaurant
-    const products = await RestaurantProduct.find({ restaurantId: restaurantId })
-      .populate("recommended.category"); // optional if you want category details
+    // Fetch products for this restaurant
+    const products = await RestaurantProduct.find({ restaurantId }).lean();
 
-    if (!products.length) {
-      return res.status(404).json({ success: false, message: "No recommended products found for this restaurant" });
+    if (!products || products.length === 0) {
+      return res.status(404).json({ success: false, message: "No products found for this restaurant" });
     }
 
-    // Flatten all recommended items
-    const recommendedList = [];
+    // Collect all recommended items
+    const allRecommended = [];
     products.forEach(product => {
-      product.recommended.forEach(item => {
-        recommendedList.push({
-          productId: product._id,
-          restaurantName: product.restaurantName,
-          locationName: product.locationName,
-          type: product.type,
-          status: product.status,
-          rating: product.rating,
-          viewCount: product.viewCount,
-          recommendedItem: {
+      if (product.recommended && product.recommended.length > 0) {
+        product.recommended.forEach(item => {
+          allRecommended.push({
+            recommendedId: item._id,       // <-- include recommended item ID
+            productId: product._id,
+            restaurantId: product.restaurantId,
+            restaurantName: product.restaurantName,
+            locationName: product.locationName,
+            type: product.type,
+            status: product.status,
+            rating: item.rating || 0,
+            viewCount: item.viewCount || 0,
             name: item.name,
             price: item.price,
-            rating: item.rating,
-            viewCount: item.viewCount,
-            content: item.content,
-            image: item.image,
-            addons: item.addons,
-            category: item.category,
-            vendorHalfPercentage: item.vendorHalfPercentage,
-            vendor_Platecost: item.vendor_Platecost,
-            calculatedPrice: item.calculatedPrice
-          }
+            content: item.content || "",
+            image: item.image || "",
+            addons: item.addons || {},
+            category: item.category || null,
+            vendorHalfPercentage: item.vendorHalfPercentage || 0,
+            vendor_Platecost: item.vendor_Platecost || 0,
+            calculatedPrice: item.calculatedPrice || {},
+            timeAndKm: product.timeAndKm || {},
+            user: product.user || null
+          });
         });
-      });
+      }
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      totalRecommendedItems: recommendedList.length,
-      recommendedProducts: recommendedList
+      totalRecommendedItems: allRecommended.length,
+      recommendedProducts: allRecommended
     });
 
   } catch (error) {
     console.error("Get Recommended Products Error:", error);
-    return res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    res.status(500).json({ success: false, message: "Server Error", error: error.message });
   }
 };
 exports.updateRestaurantProduct  = async (req, res) => {
