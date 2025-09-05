@@ -35,7 +35,7 @@ const calculateDistance = (coord1, coord2) => {
 };
 
 exports.createRestaurantProduct = async (req, res) => {
-    try {
+  try {
     const { restaurantId, userId, type, status, viewCount } = req.body;
 
     // Validate restaurant & user
@@ -95,18 +95,18 @@ exports.createRestaurantProduct = async (req, res) => {
       };
 
       formattedRecommended.push({
-  name: item.name,
-  price: item.price,
-  rating: item.rating || 0,
-  viewCount: item.viewCount || 0,
-  content: item.content || "",
-  image: imageUrl,
-  addons: parsedAddons,
-  category: item.category || null,
-  vendorHalfPercentage: vendorHalfPercentage,
-  vendor_Platecost: vendorPlateCost,  // <-- use vendorPlateCost here
-  calculatedPrice: calculatedPrice
-});
+        name: item.name,
+        price: item.price,
+        rating: item.rating || 0,
+        viewCount: item.viewCount || 0,
+        content: item.content || "",
+        image: imageUrl,
+        addons: parsedAddons,
+        category: item.category || null,
+        vendorHalfPercentage: vendorHalfPercentage,
+        vendor_Platecost: vendorPlateCost,  // <-- use vendorPlateCost here
+        calculatedPrice: calculatedPrice
+      });
     }
 
     // Save product
@@ -142,7 +142,7 @@ exports.getAllRestaurantProducts = async (req, res) => {
   }
 };
 // Get product by product ID
-exports.getByrestaurantProductId= async (req, res) => {
+exports.getByrestaurantProductId = async (req, res) => {
   try {
     const { Id } = req.params;  // Ensure your route uses /:productId
 
@@ -194,7 +194,7 @@ exports.getCartByUserId = async (req, res) => {
 };
 // Get restaurant products by category ID
 exports.getRestaurantProductsByCategoryId = async (req, res) => {
-     try {
+  try {
     const { categoryId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
@@ -231,7 +231,7 @@ exports.getRestaurantProductsByCategoryId = async (req, res) => {
   }
 };
 exports.getRecommendedByRestaurantId = async (req, res) => {
-try {
+  try {
     const { restaurantId } = req.params;
 
     // Validate restaurantId
@@ -294,8 +294,8 @@ try {
     res.status(500).json({ success: false, message: "Server Error", error: error.message });
   }
 };
-exports.updateRestaurantProduct  = async (req, res) => {
-   try {
+exports.updateRestaurantProduct = async (req, res) => {
+  try {
     const { productId } = req.params;
 
     if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {

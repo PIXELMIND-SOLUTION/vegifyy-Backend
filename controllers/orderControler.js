@@ -667,54 +667,54 @@ exports.createOrder = async (req, res) => {
 
 exports.getAllOrders = async (req, res) => {
     try {
-        const orders = await Order.find().populate("restaurantId", "restaurantName locationName");
-        return res.status(200).json({ success: true, data: orders });
-    } catch (error) {
-        console.error("getAllOrders error:", error);
-        return res.status(500).json({ success: false, message: "Server error", error: error.message });
-    }
-};
+    const orders = await Order.find()
+      .populate("restaurantId", "restaurantName locationName")
+      .populate("userId", "firstName lastName phoneNumber")
+      .sort({ createdAt: -1 });
 
+    return res.status(200).json({ success: true, data: orders });
+  } catch (error) {
+    console.error("getAllOrders error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
 // -------------------------
 // GET ORDERS BY USER ID
 // -------------------------
 exports.getOrderById = async (req, res) => {
   try {
-        const { orderId } = req.params;
+    const { orderId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(orderId))
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
 
-        if (!mongoose.Types.ObjectId.isValid(orderId))
-            return res.status(400).json({ success: false, message: "Valid orderId is required." });
+    const order = await Order.findById(orderId)
+      .populate("restaurantId", "restaurantName locationName")
+      .populate("userId", "firstName lastName phoneNumber");
 
-        let order = await Order.findById(orderId)
-            .populate("restaurantId", "restaurantName locationName")
-            .populate("userId", "fullName mobileNumber"); // optional user info
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-        if (!order)
-            return res.status(404).json({ success: false, message: "Order not found." });
-
-        return res.status(200).json({
-            success: true,
-            message: "Order fetched successfully",
-            data: order
-        });
-
-    } catch (error) {
-        console.error("getOrderById error:", error);
-        return res.status(500).json({ success: false, message: "Server error", error: error.message });
-    }
+    return res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    console.error("getOrderById error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
 };
 
 exports.getOrdersByUserId = async (req, res) => {
      try {
-        const { userId } = req.params;
-        if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ success: false, message: "Valid userId is required." });
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId))
+      return res.status(400).json({ success: false, message: "Invalid userId" });
 
-        const orders = await Order.find({ userId }).populate("restaurantId", "restaurantName locationName");
-        return res.status(200).json({ success: true, data: orders });
-    } catch (error) {
-        console.error("getOrderByUserId error:", error);
-        return res.status(500).json({ success: false, message: "Server error", error: error.message });
-    }
+    const orders = await Order.find({ userId })
+      .populate("restaurantId", "restaurantName locationName")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, data: orders });
+  } catch (error) {
+    console.error("getOrdersByUserId error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
 };
 
 // -------------------------
@@ -722,77 +722,42 @@ exports.getOrdersByUserId = async (req, res) => {
 // -------------------------
 exports.updateOrderByUserId = async (req, res) => {
   try {
-        const { userId } = req.body;
-        const { orderId } = req.params;
-        const updateFields = req.body.update || {}; // fields to update
+    const { orderId } = req.params;
+    const updates = req.body;
 
-        if (!mongoose.Types.ObjectId.isValid(userId))
-            return res.status(400).json({ success: false, message: "Valid userId is required." });
+    if (!mongoose.Types.ObjectId.isValid(orderId))
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
 
-        if (!mongoose.Types.ObjectId.isValid(orderId))
-            return res.status(400).json({ success: false, message: "Valid orderId is required." });
+    const order = await Order.findByIdAndUpdate(orderId, updates, { new: true })
+      .populate("restaurantId", "restaurantName locationName")
+      .populate("userId", "firstName lastName phoneNumber");
 
-        let order = await Order.findById(orderId);
-        if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-        if (order.userId.toString() !== userId)
-            return res.status(403).json({ success: false, message: "You are not authorized to update this order." });
-
-        // Allowed fields to update (optional: add more fields if needed)
-        const allowedFields = ["paymentStatus", "orderStatus", "paymentMethod"];
-        for (const key of allowedFields) {
-            if (updateFields[key] !== undefined) {
-                order[key] = updateFields[key];
-            }
-        }
-
-        await order.save();
-
-        order = await Order.findById(order._id)
-            .populate("restaurantId", "restaurantName locationName");
-
-        return res.status(200).json({
-            success: true,
-            message: "Order updated successfully",
-            data: order
-        });
-
-    } catch (error) {
-        console.error("updateOrderByUserId error:", error);
-        return res.status(500).json({ success: false, message: "Server error", error: error.message });
-    }
+    return res.status(200).json({ success: true, message: "Order updated", data: order });
+  } catch (error) {
+    console.error("updateOrderById error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
 };
 // -------------------------
 // DELETE ORDER BY USER ID
 // -------------------------
 exports.deleteOrderByUserId = async (req, res) => {
   try {
-        const { userId } = req.body;
-        const { orderId } = req.params;
+    const { orderId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(orderId))
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
 
-        if (!mongoose.Types.ObjectId.isValid(userId))
-            return res.status(400).json({ success: false, message: "Valid userId is required." });
+    const order = await Order.findByIdAndDelete(orderId);
 
-        if (!mongoose.Types.ObjectId.isValid(orderId))
-            return res.status(400).json({ success: false, message: "Valid orderId is required." });
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-        const order = await Order.findById(orderId);
-        if (!order) return res.status(404).json({ success: false, message: "Order not found." });
-
-        if (order.userId.toString() !== userId)
-            return res.status(403).json({ success: false, message: "You are not authorized to delete this order." });
-
-        await order.deleteOne();
-
-        return res.status(200).json({
-            success: true,
-            message: "Order deleted successfully"
-        });
-
-    } catch (error) {
-        console.error("deleteOrderByUserId error:", error);
-        return res.status(500).json({ success: false, message: "Server error", error: error.message });
-    }
+    return res.status(200).json({ success: true, message: "Order deleted successfully" });
+  } catch (error) {
+    console.error("deleteOrderById error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
 };
 // Vendor accept order
 exports.vendorAcceptOrder = async (req, res) => {
@@ -841,46 +806,22 @@ exports.assignDeliveryAndTrack = async (req, res) => {
 exports.getTodaysBookingsByUserId = async (req, res) => {
   try {
     const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId))
+      return res.status(400).json({ success: false, message: "Invalid userId" });
 
-    // Validate userId
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Valid userId is required." });
-    }
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
 
-    // Calculate start and end of today
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // Fetch today's orders for this user
     const orders = await Order.find({
       userId,
-      createdAt: { $gte: startOfDay, $lte: endOfDay }
+      createdAt: { $gte: start, $lte: end },
     })
       .populate("restaurantId", "restaurantName locationName")
       .sort({ createdAt: -1 });
 
-    return res.status(200).json({
-      success: true,
-      message: "Today's bookings fetched successfully",
-      count: orders.length,
-      data: orders.map(order => ({
-        orderId: order._id,
-        totalItems: order.totalItems,
-        subTotal: order.subTotal,
-        deliveryCharge: order.deliveryCharge,
-        totalPayable: order.totalPayable,
-        paymentMethod: order.paymentMethod,
-        paymentStatus: order.paymentStatus,
-        orderStatus: order.orderStatus,
-        restaurantLocation: order.restaurantLocation,
-        restaurantDetails: order.restaurantId,
-        products: order.products,
-        createdAt: order.createdAt
-      }))
-    });
-
+    return res.status(200).json({ success: true, data: orders });
   } catch (error) {
     console.error("getTodaysBookingsByUserId error:", error);
     return res.status(500).json({ success: false, message: "Server error", error: error.message });
@@ -889,48 +830,13 @@ exports.getTodaysBookingsByUserId = async (req, res) => {
 // ✅ POST: Get Orders by Status
 exports.getOrdersByStatus = async (req, res) => {
   try {
-    const { userId, status } = req.params;
-
-    // Validate userId
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Valid userId is required." });
-    }
-
-    // Validate status if provided
-    const validStatuses = ["Pending", "Confirmed", "Delivered", "Cancelled"];
-    if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: "Invalid order status." });
-    }
-
-    // Build filter
-    const filter = { userId };
-    if (status) filter.orderStatus = status;
-
-    // Fetch orders
-    const orders = await Order.find(filter)
+    const { status } = req.params;
+    const orders = await Order.find({ orderStatus: status })
       .populate("restaurantId", "restaurantName locationName")
+      .populate("userId", "firstName lastName phoneNumber")
       .sort({ createdAt: -1 });
 
-    return res.status(200).json({
-      success: true,
-      message: "Orders fetched successfully",
-      count: orders.length,
-      data: orders.map(order => ({
-        orderId: order._id,
-        totalItems: order.totalItems,
-        subTotal: order.subTotal,
-        deliveryCharge: order.deliveryCharge,
-        totalPayable: order.totalPayable,
-        paymentMethod: order.paymentMethod,
-        paymentStatus: order.paymentStatus,
-        orderStatus: order.orderStatus,
-        restaurantLocation: order.restaurantLocation,
-        restaurantDetails: order.restaurantId,
-        products: order.products,
-        createdAt: order.createdAt
-      }))
-    });
-
+    return res.status(200).json({ success: true, data: orders });
   } catch (error) {
     console.error("getOrdersByStatus error:", error);
     return res.status(500).json({ success: false, message: "Server error", error: error.message });
